@@ -1,0 +1,273 @@
+{
+  "main": {
+    "id": "b4962b51de2091e7",
+    "type": "split",
+    "children": [
+      {
+        "id": "4992f0c0c6cae1e4",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a31da744594062ea",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Database/MySQL/基础架构.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "基础架构"
+            }
+          },
+          {
+            "id": "708ab7096f24397b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Database/MySQL/索引.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "索引"
+            }
+          },
+          {
+            "id": "f0987c488eb5d49a",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Database/MySQL/日志.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "日志"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "eded379135984d7f",
+    "type": "split",
+    "children": [
+      {
+        "id": "94effdc42e8f0147",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "98378a0d133f11e4",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "byModifiedTime",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "8b5ef6a31ac401a4",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "tag:#TODO",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "1d6ff5b2f6235ecd",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 284.50614166259766
+  },
+  "right": {
+    "id": "d1558f226d9baa07",
+    "type": "split",
+    "children": [
+      {
+        "id": "124ec6bf54aebfb9",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "cc58a937c4f92615",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Algo/数组/单调栈.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "单调栈 的反向链接列表"
+            }
+          },
+          {
+            "id": "af9fc508be5e0820",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Algo/数组/单调栈.md",
+                "linksCollapsed": true,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "单调栈 的出链列表"
+            }
+          },
+          {
+            "id": "311831eb68dd112c",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "224df5a858cff9d2",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Go/语言知识/Golang 内存模型与分配机制.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Golang 内存模型与分配机制 的大纲"
+            }
+          },
+          {
+            "id": "67fa6d4bbba3d3b9",
+            "type": "leaf",
+            "state": {
+              "type": "quiet-outline",
+              "state": {},
+              "icon": "lines-of-text",
+              "title": "Quiet Outline"
+            }
+          },
+          {
+            "id": "9e7d975874545999",
+            "type": "leaf",
+            "state": {
+              "type": "github-copilot-chat-view",
+              "state": {},
+              "icon": "bot-message-square",
+              "title": "Copilot Chat"
+            }
+          },
+          {
+            "id": "f64f28fef9293243",
+            "type": "leaf",
+            "state": {
+              "type": "git-view",
+              "state": {},
+              "icon": "git-pull-request",
+              "title": "Source Control"
+            }
+          }
+        ],
+        "currentTab": 6
+      }
+    ],
+    "direction": "horizontal",
+    "width": 399.5
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "obsidian-excalidraw-plugin:新建绘图文件": false,
+      "obsidian-git:Open Git source control": false
+    }
+  },
+  "active": "98378a0d133f11e4",
+  "lastOpenFiles": [
+    "新建 文本文档.txt",
+    "Database/MySQL/索引.md",
+    "Database/MySQL/日志.md",
+    "Database/MySQL/事务.md",
+    "Database/MySQL/锁.md",
+    "Database/MySQL/基础架构.md",
+    "Database/数据库/B+ 树.md",
+    "消息队列",
+    "Database/存储结构/B+ 树.md",
+    "Go/语言知识/Golang 垃圾回收原理分析.md",
+    "Algo/数据结构/优先队列.md",
+    "Algo/数组/回文串.md",
+    "Go/语言知识/温故知新——Golang GMP 万字洗髓经.md",
+    "annex/Pasted image 20240903213705.png",
+    "Go/语言知识/Golang 内存模型与分配机制.md",
+    "Go/语言知识/Golang 垃圾回收源码走读.md",
+    "Algo/二叉树/变换/Trie树.md",
+    "annex/深入理解计算机系统（原书第3版）扫描版可编辑 (Randal E.Bryant David OHallaron) (Z-Library).pdf",
+    "Database/Redis",
+    "Course/数字逻辑.md",
+    "Database/MySQL",
+    "Go/语言知识/Golang Channel 实现原理.md",
+    "Algo/二叉树/变换/线段树.md",
+    "Algo/DFS 回溯/排列组合.md",
+    "Algo/数组/单调栈.md",
+    "Algo/图/Dijkstr.md",
+    "Algo/BFS",
+    "Algo/数学/组合数.md",
+    "Algo/图",
+    "Algo/链表/合并k条有序链表.md",
+    "Algo/DFS 回溯/N皇后.md",
+    "Algo/排序/归并排序.md",
+    "Algo/链表/快慢指针.md",
+    "Algo/DFS 回溯",
+    "Algo/贪心",
+    "Algo/链表",
+    "Algo/数据结构/缓存",
+    "未命名.canvas",
+    "Pasted image 20240903213539.png",
+    "Pasted image 20240903213228.png"
+  ]
+}

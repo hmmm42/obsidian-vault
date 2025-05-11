@@ -1,0 +1,155 @@
+# 逃逸分析
+逃逸: 一个对象的指针被多个方法/对象共享
+逃逸分析: 决定一个变量分配在堆还是栈上
+
+## 意义
+堆: 不可知大小的内存分配, 但是**分配速度慢, 形成内存碎片**
+栈: 需要知道内存大小
+将不需要分配到堆上的对象分配到栈上, 减少 GC 压力, 提高程序性能 
+
+## 原理
+- 变量在函数外部没有引用, 优先放到栈上
+	例外: 定义过大数组, 会放到堆上
+- 变量在函数外部有引用, 一定放到堆上 *逃逸*
+
+- & Go 中的堆栈是由运行时重新分配的, 不同于操作系统的堆栈
+指针运算不生效: 栈可能会进行整体拷贝
+
+# 延迟分析
+defer, 处理 panic
+## 执行顺序
+先进后出 (栈)
+defer 闭包: 复制一份调用时的参数, 如果是引用, 可能不一致
+```go
+type number int
+
+func (n number) print() {
+	fmt.Println(n)
+}
+func (n *number) pprint() {
+	fmt.Println(*n)
+}
+
+func TestDefer(t *testing.T) {
+	var num number
+	defer num.print()
+	defer num.pprint()
+	defer func() { num.print() }() 
+	// 闭包, 引用外部的 num, 已赋值为3
+	defer func() { num.pprint() }()
+	num = 3
+}
+// 3 3 3 0
+
+```
+
+```go
+	whatever := make([]int, 3)
+	for i := range whatever {
+		defer func() {
+			t.Log(i)
+		}()
+	}
+	// 2 1 0
+```
+Go 1.22 之后, range loop 每次迭代会为循环变量`i`创建新的实例, 闭包捕获的是当前迭代的独立变量值
+
+## return
+return 语句可拆解为3步:
+- 赋值->返回值
+- defer
+- 空 return
+
+## 闭包
+闭包 = 函数 + 引用环境
+*可以把闭包看成是一个类, 一个闭包函数调用就是实例化一个类*
+**闭包捕获的变量和常量是引用传递**
+eg.
+```go
+func Accumulator() func(int) int {
+	var x int
+	return func(delta int) int {
+		fmt.Printf("(%+v, %+v) - ", &x, x)
+		x += delta
+		return x
+	}
+} // 对同一个闭包实例, 内部的 x 是同一个地址
+```
+
+# 数据容器
+## slice & array
+array 是连续的内存
+slice 是结构体, 包含:
+- len
+- cap
+- 底层数组
+
+### 截断
+```go
+dst = src[low:high:max]
+```
+max: 底层数组截取到哪个索引, 默认为 cap(src)
+*如果截取的 dst append 到了 cap, 会重新分配内存, 底层数组改变
+
+### 扩容
+old_cap < 1024: new_cap = old_cap * 2
+old_cap >= 1024: new_cap = old_cap * 1.25, 同时进行内存对齐,实际分配的内存会更大
+
+### make & new
+make 返回值, new 返回指针
+make 返回初始化后的引用, new 为新值分配置零的内存空间
+
+## map
+TODO
+
+# 通道
+并发哲学: 不要通过共享内存来通信, 而要通过通信来实现内存共享.
+
+### 底层数据结构：`hchan`结构体
+
+Channel的核心是一个名为`hchan`的结构体
+1. ​**​环形缓冲区（`buf`）​**​
+    - 用于存储待传输数据的循环队列，长度由创建时的`dataqsiz`指定。
+    - `qcount`表示当前队列中元素数量，`sendx`和`recvx`记录下一次发送/接收的位置索引。
+    - ​**​适用场景​**​：有缓冲Channel通过缓冲区实现异步通信，减少Goroutine阻塞频率。
+2. ​**​等待队列（`sendq`和`recvq`）​**​
+    - `sendq`：双向链表，保存因缓冲区满而阻塞的发送方Goroutine（`sudog`结构）。
+    - `recvq`：双向链表，保存因缓冲区空而阻塞的接收方Goroutine。
+    - ​**​公平性​**​：队列遵循FIFO原则，等待最久的Goroutine优先被唤醒
+3. ​**​类型与同步机制​**​   
+    - `elemtype`和`elemsize`：记录传输数据的类型和大小，确保类型安全   
+    - `lock`：互斥锁，保证并发操作（如读写缓冲区、修改队列）的线程安全
+
+### 核心操作流程
+
+####  ​**​发送数据（`ch <- val`）​**​
+
+- ​**​缓冲区未满​**​：直接拷贝数据到`buf`，更新`sendx`和`qcount`。
+- ​**​缓冲区已满或无缓冲​**​：
+    - 将当前Goroutine封装为`sudog`加入`sendq`，挂起等待。
+    - 当接收方出现时，数据直接从发送方内存拷贝到接收方（绕过缓冲区）
+
+#### ​**​接收数据（`val := <-ch`）​**​
+
+- ​**​缓冲区非空​**​：从`buf`拷贝数据到接收变量，更新`recvx`和`qcount`。
+- ​**​缓冲区为空或无缓冲​**​：
+    - 将Goroutine加入`recvq`，挂起等待。
+    - 当发送方出现时，若缓冲区存在，数据从缓冲区拷贝；否则直接从发送方内存拷贝
+
+#### ​**​关闭Channel（`close(ch)`）​**​
+*原则: Don’t close (or send values to) closed Channels.*
+- ​**​唤醒所有等待的接收方​**​：返回零值并解除阻塞。
+- ​**​唤醒所有发送方​**​：触发panic（因向已关闭Channel发送数据非法）。
+- ​**​关闭后的读操作​**​：可继续读取缓冲区剩余数据，之后返回零值
+
+# 接口
+
+
+# 同步模式 WaitGroup
+
+
+# 调度模式 Goroutine
+
+# 内存分配
+
+# 垃圾回收 GC

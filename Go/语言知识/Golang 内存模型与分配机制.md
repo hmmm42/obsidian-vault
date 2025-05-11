@@ -1,0 +1,1035 @@
+#  Golang 内存模型与分配机制   
+原创 小徐先生1212  小徐先生的编程世界   2023-02-04 00:43  
+  
+# 0 前言  
+  
+未来两周，想和大家探讨的主题是 Golang 内存管理机制.  
+  
+本系列会分为两篇，第一篇谈及 Golang 内存模型以及内存分配机制，第二篇会和大家讨论 Golang 的垃圾回收机制. 本文是其中第一篇.  
+  
+我个人比较推崇”基于源码支撑原理“的信念，所以本文在阐述原理的基础上，会伴有大量源码走读的过程，作为理论的支撑论证. 走读的 Go 源码版本为 1.19.  
+  
+内存管理与垃圾回收都属 Go 语言最复杂的模块，受限于笔者个人水平，文章内容可能有不足或纰漏之处，很欢迎大家添加我的个人 VX：xingyun19951212 进行批评指正.  
+  
+   
+# 1 内存模型  
+## 1.1 操作系统存储模型  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwv3By84AjPLDbvt2Rrwryt8II51uxyIMQ7RRImvFvaia48PlCniaqn9sg/640?wx_fmt=png "")  
+  
+   
+  
+本文既然要聊到 Golang 的内存模型设计，就让我们首先回顾操作系统中经典的多级存储模型设计.  
+  
+观察上图，我们可以从中捕捉到的关键词是：  
+- 多级模型  
+  
+- 动态切换  
+  
+   
+## 1.2 虚拟内存与物理内存  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwibibcF9N0P1HoPHQ0QJv1QzOlwJTjIptdFibxYITDxM0aQJBhDUw0icF2Q/640?wx_fmt=png "")  
+  
+操作系统内存管理中，另一个重要概念是虚拟内存，其作用如下：  
+- 在用户与硬件间添加中间代理层（没有什么是加一个中间层解决不了的）  
+  
+- 优化用户体验（进程感知到获得的内存空间是“连续”的）  
+  
+- “放大”可用内存（虚拟内存可以由物理内存+磁盘补足，并根据冷热动态置换，用户无感知）  
+
+==虚拟内存不是只让用户看着空间更大，主要是为了解决内存隔离的问题==
+  
+   
+## 1.3 分页管理  
+
+==分页不仅是为了防止外部内存碎片，主要还是做进程管理，主要解决多进程时代内存可能会溢出的问题。==
+
+操作系统中通常会将虚拟内存和物理内存切割成固定的尺寸，于虚拟内存而言叫作“页”，于物理内存而言叫作“帧”，原因及要点如下：  
+- 提高内存空间利用（以页为粒度后，消灭了不稳定的外部碎片，取而代之的是相对**可控的内部碎片**）  
+  
+- 提高**内外存交换效率**（更细的粒度带来了更高的灵活度）  
+  
+- 与虚拟内存机制呼应，便于建立虚拟地址->物理地址的映射关系（聚合映射关系的数据结构，称为页表）  
+  
+- linux 页/帧的大小固定，为 4KB（这实际是由实践推动的经验值，太粗会增加**碎片率**，太细会增加**分配频率**影响效率）  
+  
+   
+## 1.4 Golang 内存模型  
+  
+前几小节的铺垫，旨在从“内存模型设计”这件事情中收获一些触类旁通的设计理念.  
+  
+下面步入正题，聊聊 Golang 的内存模型设计的几个核心要点：  
+  
+   
+- 以空间换时间，一次缓存，多次复用  
+  
+由于每次向操作系统申请内存的操作很重，那么不妨一次多申请一些，以备后用.  
+  
+Golang 中的堆 mheap 正是基于该思想，产生的数据结构. 我们可以从两个视角来解决 Golang 运行时的堆：  
+  
+I 对操作系统而言，这是用户进程中缓存的内存  
+  
+II 对于 Go 进程内部，堆是所有对象的内存起源  
+  
+   
+- 多级缓存，实现无/细锁化  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwL6syk6puNxa0Wx0XfnO48n3o4AM8MNRSicNOcDp3Q9Eicib2j7BIibkqEA/640?wx_fmt=png "")  
+  
+   
+  
+堆是 Go 运行时中最大的临界共享资源，这意味着每次存取都要加锁，在性能层面是一件很可怕的事情.  
+  
+在解决这个问题，Golang 在堆 mheap 之上，依次细化粒度，建立了 mcentral、mcache 的模型，下面对三者作个梳理：  
+- mheap：全局的内存起源，访问要加全局锁  
+  
+- mcentral：每种对象大小规格（全局共划分为 68 种）对应的缓存，锁的粒度也仅限于同一种规格以内  
+  
+- mcache：每个 P（正是 GMP 中的 P）持有一份的内存缓存，访问时无锁  
+  
+这些概念，我们在第 2 节中都会再作详细展开，此处可以先不深究，注重于宏观架构即可.  
+  
+   
+- 多级规格，提高利用率  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwkDibfnBcJn5nOCyDic2gHABzy2TKIKrqN27Nnw3jXrudGb8rcYIjcHCQ/640?wx_fmt=png "")  
+  
+首先理下 page 和 mspan 两个概念：  
+  
+（1）page：最小的存储单元.  
+  
+Golang 借鉴操作系统分页管理的思想，每个最小的存储单元也称之为页 page，但大小为 8 KB  
+  
+（2）mspan：最小的管理单元.  
+  
+mspan 大小为 page 的整数倍，且从 8B 到 80 KB 被划分为 67 种不同的规格，分配对象时，会根据大小映射到不同规格的 mspan，从中获取空间.  
+  
+于是，我们回头小节多规格 mspan 下产生的特点：  
+  
+I 根据规格大小，产生了等级的制度  
+  
+II 消除了外部碎片，但不可避免会有内部碎片  
+  
+III 宏观上能提高整体空间利用率  
+  
+IV 正是因为有了规格等级的概念，才支持 mcentral 实现细锁化  
+  
+   
+- 全局总览，留个印象  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwkd8rJZ9b0h745aibfNReUePg2bqzT4ibrB6rrxzlzf6fMZnXib87O5o4w/640?wx_fmt=png "")  
+  
+上图是 Thread-Caching Malloc 的整体架构图，Golang 正是借鉴了该内存模型. 我们先看眼架构，有个整体概念，后续小节中，我们会不断对细节进行补充.  
+  
+   
+# 2 核心概念梳理  
+## 2.1 内存单元 mspan  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwVjyTndMCMye0R74K1BU6dn8pGAYE3eJMD69ARa7R4atB90xROvr5XA/640?wx_fmt=png "")  
+  
+分点阐述 mspan 的特质：  
+- mspan 是 Golang 内存管理的最小单元  
+  
+- mspan 大小是 page 的整数倍（Go 中的 page 大小为 8KB），且内部的页是连续的（至少在虚拟内存的视角中是这样）  
+  
+- 每个 mspan 根据空间大小以及面向分配对象的大小，会被划分为不同的等级（2.2小节展开）  
+  
+- 同等级的 mspan 会从属同一个 mcentral，最终会被组织成链表，因此带有前后指针（prev、next）  
+  
+- 由于同等级的 mspan 内聚于同一个 mcentral，所以会基于同一把互斥锁管理  
+  
+- mspan 会基于 bitMap 辅助快速找到空闲内存块（块大小为对应等级下的 object 大小），此时需要使用到 Ctz64 算法.  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwLuvP1p11XIc69cjk2O0m6Poiaibs5NoX4bBmCBV9XicO921W9bCe7PXRw/640?wx_fmt=png "")  
+  
+   
+  
+mspan 类的源码位于 runtime/mheap.go 文件中：  
+```
+type mspan struct {
+    // 标识前后节点的指针 
+    next *mspan     
+    prev *mspan    
+    // ...
+    // 起始地址
+    startAddr uintptr 
+    // 包含几页，页是连续的
+    npages    uintptr 
+
+
+    // 标识此前的位置都已被占用 
+    freeindex uintptr
+    // 最多可以存放多少个 object
+    nelems uintptr // number of object in the span.
+
+
+    // bitmap 每个 bit 对应一个 object 块，标识该块是否已被占用
+    allocCache uint64
+    // ...
+    // 标识 mspan 等级，包含 class 和 noscan 两部分信息
+    spanclass             spanClass    
+    // ...
+}
+```  
+  
+   
+  
+   
+## 2.2 内存单元等级 spanClass  
+  
+mspan 根据空间大小和面向分配对象的大小，被划分为 67 种等级（1-67，实际上还有一种隐藏的 0 级，用于处理更大的对象，上不封顶）  
+  
+   
+  
+下表展示了部分的 mspan 等级列表，数据取自 runtime/sizeclasses.go 文件中：  
+  
+<table><thead style="line-height: 1.75;background: rgba(0, 0, 0, 0.05);font-weight: bold;color: rgb(63, 63, 63);"><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">class</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">bytes/obj</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">bytes/span</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">objects</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">tail waste</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">max waste</strong></td></tr></thead><tbody><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">1</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">8</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">8192</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">1024</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">0</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">87.50%</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">2</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">16</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">8192</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">512</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">0</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">43.75%</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">3</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">24</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">8192</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">341</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">8</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">29.24%</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">4</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">32</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">8192</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">256</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">0</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">21.88%</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">...</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);"><br/></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);"><br/></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);"><br/></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);"><br/></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);"><br/></td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">66</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">28672</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">57344</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">2</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">0</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">4.91%</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">67</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">32768</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">32768</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">1</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">0</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">12.50%</td></tr></tbody></table>  
+  
+对上表各列进行解释：  
+  
+（1）class：mspan 等级标识，1-67  
+  
+（2）bytes/obj：该大小规格的对象会从这一 mspan 中获取空间. 创建对象过程中，大小会向上取整为 8B 的整数倍，因此该表可以直接实现 object 到 mspan 等级 的映射  
+  
+（3）bytes/span：该等级的 mspan 的总空间大小  
+  
+（4）object：该等级的 mspan 最多可以 new 多少个对象，结果等于 （3）/（2）  
+  
+（5）tail waste：（3）/（2）可能除不尽，于是该项值为（3）%（2）  
+  
+（6）max waste：通过下面示例解释：  
+  
+   
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwKyUrN4ssUF9S7GnaDK6TE5JPvsentG1c2nyDmft2V6Eo5ZiaC0B3eKQ/640?wx_fmt=png "")  
+  
+以 class 3 的 mspan 为例，class 分配的 object 大小统一为 24B，由于 object 大小 <= 16B 的会被分配到 class 2 及之前的 class 中，因此只有 17B-24B 大小的 object 会被分配到 class 3.  
+  
+最不利的情况是，当 object 大小为 17B，会产生浪费空间比例如下：  
+```
+    ((24-17)*341 + 8)/8192 = 0.292358 ≈ 29.24%
+```  
+  
+   
+  
+除了上面谈及的根据大小确定的 mspan 等级外，每个 object 还有一个重要的属性叫做 nocan，标识了 object 是否包含指针，在 gc 时是否需要展开标记. 
+==指针可能指向别的堆上的内存, 需要进一步清理== 
+  
+在 Golang 中，会将 span class + nocan 两部分信息组装成一个 uint8，形成完整的 spanClass 标识. 8 个 bit 中，高 7 位表示了上表的 span 等级（总共 67 + 1 个等级，8 个 bit 足够用了），最低位表示 nocan 信息.  
+  
+   
+  
+代码位于 runtime/mheap.go  
+```
+type spanClass uint8
+
+
+// uint8 左 7 位为 mspan 等级，最右一位标识是否为 noscan
+func makeSpanClass(sizeclass uint8, noscan bool) spanClass {
+    return spanClass(sizeclass<<1) | spanClass(bool2int(noscan))
+}
+
+
+func (sc spanClass) sizeclass() int8 {
+    return int8(sc >> 1)
+}
+
+
+func (sc spanClass) noscan() bool {
+    return sc&1 != 0
+}
+```  
+  
+   
+## 2.3 线程缓存 mcache  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwK1DGEj9GhlDHF66yk8rqcguOJEF65wXmezftH2BQywiaPPVAtsEl7cg/640?wx_fmt=png "")  
+  
+要点：  
+  
+（1）mcache 是每个 P 独有的缓存，因此交互无锁  
+  
+（2）mcache 将每种 spanClass 等级的 mspan 各缓存了一个，总数为 2（nocan 维度） * 68（大小维度）= 136  
+  
+（3）mcache 中还有一个为对象分配器 tiny allocator，用于处理小于 16B 对象的内存分配，在 3.3 小节中详细展开.  
+  
+   
+  
+代码位于 runtime/mcache.go：  
+```
+const numSpanClasses = 136
+type mcache struct {
+    // 微对象分配器相关
+    tiny       uintptr
+    tinyoffset uintptr
+    tinyAllocs uintptr
+    
+    // mcache 中缓存的 mspan，每种 spanClass 各一个
+    alloc [numSpanClasses]*mspan 
+    // ...
+}
+```  
+  
+   
+## 2.4 中心缓存 mcentral  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwsia9SChfO8s9WyW758xmXp35Y1BKee4Xu92ibK3KCVdo4SMoAz0eIOAQ/640?wx_fmt=png "")  
+  
+要点：  
+  
+（1）每个 mcentral 对应一种 spanClass  
+  
+（2）每个 mcentral 下聚合了该 spanClass 下的 mspan  
+  
+（3）mcentral 下的 mspan 分为两个链表，分别为有空间 mspan 链表 partial 和满空间 mspan 链表 full  
+  
+（4）每个 mcentral 一把锁  
+  
+   
+  
+代码位于 runtime/mcentral.go  
+```
+type mcentral struct {
+    // 对应的 spanClass
+    spanclass spanClass
+    // 有空位的 mspan 集合，数组长度为 2 是用于抗一轮 GC
+    partial [2]spanSet 
+    // 无空位的 mspan 集合
+    full    [2]spanSet 
+}
+```  
+  
+   
+## 2.5 全局堆缓存 mheap  
+  
+要点：  
+- 对于 Golang 上层应用而言，堆是操作系统虚拟内存的抽象  
+  
+- 以页（8KB）为单位，作为最小内存存储单元  
+  
+- 负责将连续页组装成 mspan  
+  
+- 全局内存基于 bitMap 标识其使用情况，每个 bit 对应一页，为 0 则自由，为 1 则已被 mspan 组装  
+  
+- 通过 heapArena 聚合页，记录了页到 mspan 的映射信息（2.7小节展开）  
+  
+- 建立空闲页基数树索引 radix tree index，辅助快速寻找空闲页（2.6小节展开）  
+  
+- 是 mcentral 的持有者，持有所有 spanClass 下的 mcentral，作为自身的缓存  
+  
+- 内存不够时，向操作系统申请，申请单位为 heapArena（64M）  
+  
+   
+  
+代码位于 runtime/mheap.go  
+```
+type mheap struct {
+    // 堆的全局锁
+    lock mutex
+
+
+    // 空闲页分配器，底层是多棵基数树组成的索引，每棵树对应 16 GB 内存空间
+    pages pageAlloc 
+
+
+    // 记录了所有的 mspan. 需要知道，所有 mspan 都是经由 mheap，使用连续空闲页组装生成的
+    allspans []*mspan
+
+
+    // heapAreana 数组，64 位系统下，二维数组容量为 [1][2^22]
+    // 每个 heapArena 大小 64M，因此理论上，Golang 堆上限为 2^22*64M = 256T
+    arenas [1 << arenaL1Bits]*[1 << arenaL2Bits]*heapArena
+
+
+    // ...
+    // 多个 mcentral，总个数为 spanClass 的个数
+    central [numSpanClasses]struct {
+        mcentral mcentral
+        // 用于内存地址对齐
+        pad      [cpu.CacheLinePadSize - unsafe.Sizeof(mcentral{})%cpu.CacheLinePadSize]byte
+    }
+
+
+    // ...
+}
+```  
+  
+   
+## 2.6 空闲页索引 pageAlloc  
+  
+与 mheap 中，与空闲页寻址分配的基数树索引有关的内容较为晦涩难懂. 网上能把这个问题真正讲清楚的文章几乎没有.  
+  
+所幸我最后找到这个数据结构的作者发布的笔记，终于对方案的原貌有了大概的了解，这里粘贴链接，供大家自取：https://go.googlesource.com/proposal/+/master/design/35112-scaling-the-page-allocator.md  
+  
+   
+  
+要理清这棵技术树，首先需要明白以下几点：  
+  
+（1）数据结构背后的含义：  
+  
+I 2.5 小节有提及，mheap 会基于 bitMap 标识内存中各页的使用情况，bit 位为 0 代表该页是空闲的，为 1 代表该页已被 mspan 占用.  
+  
+II 每棵基数树聚合了 16 GB 内存空间中各页使用情况的索引信息，用于帮助 mheap 快速找到指定长度的连续空闲页的所在位置  
+  
+III mheap 持有 2^14 棵基数树，因此索引全面覆盖到 2^14 * 16 GB = 256 T 的内存空间.  
+  
+   
+  
+（2）基数树节点设定  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwjQJkl8icXy7JtV7kJyWYbfU8434Fx3ECfrkFWD4KNGES627xKAUCT7g/640?wx_fmt=png "")  
+  
+基数树中，每个节点称之为 PallocSum，是一个 uint64 类型，体现了索引的聚合信息，包含以下四部分：  
+- start：最右侧 21 个 bit，标识了当前节点映射的 bitMap 范围中首端有多少个连续的 0 bit（空闲页），称之为 start；  
+  
+- max：中间 21 个 bit，标识了当前节点映射的 bitMap 范围中最多有多少个连续的 0 bit（空闲页），称之为 max；  
+  
+- end：左侧 21 个 bit，标识了当前节点映射的 bitMap 范围中最末端有多少个连续的 0 bit（空闲页），称之为 end.  
+  
+- 最左侧一个 bit，弃置不用  
+  
+   
+  
+（3）父子关系  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwiceXcSHup0OMFde1h5S449Q4IuVUYKoA64erZ8EMjsRUH5qg9LZwkFw/640?wx_fmt=png "")  
+  
+   
+- 每个父 pallocSum 有 8 个子 pallocSum  
+  
+- 根 pallocSum 总览全局，映射的 bitMap 范围为全局的 16 GB 空间（其 max 最大值为 2^21，因此总空间大小为 2^21*8KB=16GB）；  
+  
+- 从首层向下是一个依次八等分的过程，每一个 pallocSum 映射其父节点 bitMap 范围的八分之一，因此第二层 pallocSum 的 bitMap 范围为 16GB/8 = 2GB，以此类推，第五层节点的范围为 16GB / (8^4) = 4 MB，已经很小  
+  
+- 聚合信息时，自底向上. 每个父 pallocSum 聚合 8 个子 pallocSum 的 start、max、end 信息，形成自己的信息，直到根 pallocSum，坐拥全局 16 GB 的 start、max、end 信息  
+  
+- mheap 寻页时，自顶向下. 对于遍历到的每个 pallocSum，先看起 start 是否符合，是则寻页成功；再看 max 是否符合，是则进入其下层孩子 pallocSum 中进一步寻访；最后看 end 和下一个同辈 pallocSum 的 start 聚合后是否满足，是则寻页成功.  
+  
+   
+  
+   
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwm5udDIS2GkQwO3wfhGd35fFqFHLT61hYbpko1Z5nRRvNHoNc9iaHRTA/640?wx_fmt=png "")  
+  
+   
+  
+   
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwRSFDUvBicLLaytD7xbkiaKxBGlGCQ1fBSUBujxjDZEvUXT69woz0ksAA/640?wx_fmt=png "")  
+  
+   
+  
+代码位于 runtime/mpagealloc.go  
+```
+const summaryLevels = 5
+
+
+type pageAlloc struct {
+    // 共有五层基数树，第一层有 2^14 个节点，因此共用 2^14棵基数树
+    // 总空间大小为 2^14*16GB = 256T
+    // 接下来每层的节点数为上层的 8 倍
+    summary [summaryLevels][]pallocSum
+    
+    // ...
+    // 类似于 tiny offset，小于此值的地址无锁检索，必然没有空间可用
+    searchAddr offAddr
+
+
+    // ...
+}
+```  
+  
+   
+  
+基数树节点  
+```
+const(
+    logMaxPackedValue = 21
+    maxPackedValue    = 1 << logMaxPackedValue
+)
+
+
+type pallocSum uint64
+
+
+// 基于 start、max、end 组装成一个基数树节点 pallocSum
+func packPallocSum(start, max, end uint) pallocSum {
+    // ...
+    return pallocSum((uint64(start) & (maxPackedValue - 1)) |
+        ((uint64(max) & (maxPackedValue - 1)) << logMaxPackedValue) |
+        ((uint64(end) & (maxPackedValue - 1)) << (2 * logMaxPackedValue)))
+}
+
+
+// 当前节点对应区域内，首部连续空闲页的长度
+// 通过 uint64 最右侧 21 个 bit 标识
+func (p pallocSum) start() uint {
+    // ...
+    return uint(uint64(p) & (maxPackedValue - 1))
+}
+
+
+// 当前节点对应区域内，连续空闲页的最大长度
+// 通过 uint64 左数 23~43 个 bit 标识
+func (p pallocSum) max() uint {
+    // ...
+    return uint((uint64(p) >> logMaxPackedValue) & (maxPackedValue - 1))
+}
+
+
+// 当前节点对应区域内，尾部连续空闲页的长度
+// 通过 uint64 左数 2~22 个 bit 标识
+func (p pallocSum) end() uint {
+    return uint((uint64(p) >> (2 * logMaxPackedValue)) & (maxPackedValue - 1))
+}
+```  
+  
+   
+## 2.7 heapArena  
+- 每个 heapArena 包含 8192 个页，大小为 8192 * 8KB = 64 MB  
+  
+- heapArena 记录了页到 mspan 的映射. 因为 GC 时，通过地址偏移找到页很方便，但找到其所属的 mspan 不容易. 因此需要通过这个映射信息进行辅助.  
+  
+- heapArena 是 mheap 向操作系统申请内存的单位（64MB）  
+  
+   
+  
+代码位于 runtime/mheap.go  
+```
+const pagesPerArena = 8192
+
+
+type heapArena struct {
+    // ...
+    // 实现 page 到 mspan 的映射
+    spans [pagesPerArena]*mspan
+
+
+    // ...
+}
+```  
+  
+# 3 对象分配流程  
+  
+下面来串联 Golang 中分配对象的流程，不论是以下哪种方式，最终都会殊途同归步入 mallocgc 方法中，并且根据 3.1 小节中的策略执行分配流程：  
+- new(T)  
+  
+- &T{}  
+  
+- make(xxxx)  
+  
+   
+## 3.1 分配流程总览  
+  
+Golang 中，依据 object 的大小，会将其分为下述三类：  
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwjha1SwhwkaNS3PoV236jOxmjHqhR9pbQx4e7qfXE7xZLYBQQTB7E5g/640?wx_fmt=png "")  
+  
+   
+  
+不同类型的对象，会有着不同的分配策略，这些内容在 mallocgc 方法中都有体现.  
+  
+核心流程类似于读多级缓存的过程，由上而下，每一步只要成功则直接返回. 若失败，则由下层方法兜底.  
+  
+对于微对象的分配流程：  
+  
+（1）从 P 专属 mcache 的 tiny 分配器取内存（无锁）  
+  
+（2）根据所属的 spanClass，从 P 专属 mcache 缓存的 mspan 中取内存（无锁）  
+  
+（3）根据所属的 spanClass 从对应的 mcentral 中取 mspan 填充到 mcache，然后从 mspan 中取内存（spanClass 粒度锁）  
+  
+（4）根据所属的 spanClass，从 mheap 的页分配器 pageAlloc 取得足够数量空闲页组装成 mspan 填充到 mcache，然后从 mspan 中取内存（全局锁）  
+  
+（5）mheap 向操作系统申请内存，更新页分配器的索引信息，然后重复（4）.  
+  
+   
+  
+对于小对象的分配流程是跳过（1）步，执行上述流程的（2）-（5）步；  
+  
+对于大对象的分配流程是跳过（1）-（3）步，执行上述流程的（4）-（5）步.  
+  
+   
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwralF3nEibKSbypbCcrSMDpAEgVJJE1ibaO6QCV2MNjwwibpt8PZiaw686g/640?wx_fmt=png "")  
+  
+   
+## 3.2 主干方法 mallocgc  
+  
+先上道硬菜，malloc 方法主干全流程展示.  
+  
+如果觉得理解曲线太陡峭，可以先跳到后续小节，把拆解的各部分模块都熟悉后，再回过头来总览一遍.  
+  
+代码位于 runtime/malloc.go 文件中：  
+```go
+func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+    // ...    
+    // 获取 m
+    mp := acquirem()
+    // 获取当前 p 对应的 mcache
+    c := getMCache(mp)
+    var span *mspan
+    var x unsafe.Pointer
+    // 根据当前对象是否包含指针，标识 gc 时是否需要展开扫描
+    noscan := typ == nil || typ.ptrdata == 0
+    // 是否是小于 32KB 的微、小对象
+    if size <= maxSmallSize {
+    // 小于 16 B 且无指针，则视为微对象
+        if noscan && size < maxTinySize {
+        // tiny 内存块中，从 offset 往后有空闲位置
+          off := c.tinyoffset
+          // 如果大小为 5 ~ 8 B，size 会被调整为 8 B，此时 8 & 7 == 0，会走进此分支
+          if size&7 == 0 {
+                // 将 offset 补齐到 8 B 倍数的位置
+                off = alignUp(off, 8)
+                // 如果大小为 3 ~ 4 B，size 会被调整为 4B，此时 4 & 3 == 0，会走进此分支  
+           } else if size&3 == 0 {
+           // 将 offset 补齐到 4 B 倍数的位置
+                off = alignUp(off, 4)
+                // 如果大小为 1 ~ 2 B，size 会被调整为 2B，此时 2 & 1 == 0，会走进此分支  
+           } else if size&1 == 0 {
+            // 将 offset 补齐到 2 B 倍数的位置
+                off = alignUp(off, 2)
+           }
+// 如果当前 tiny 内存块空间还够用，则直接分配并返回
+            if off+size <= maxTinySize && c.tiny != 0 {
+            // 分配空间
+                x = unsafe.Pointer(c.tiny + off)
+                c.tinyoffset = off + size
+                c.tinyAllocs++
+                mp.mallocing = 0
+                releasem(mp)  
+                return x
+            } 
+            // 分配一个新的 tiny 内存块
+            span = c.alloc[tinySpanClass]    
+            // 从 mCache 中获取
+            v := nextFreeFast(span)        
+            if v == 0 {
+            // 从 mCache 中获取失败，则从 mCentral 或者 mHeap 中获取进行兜底
+                v, span, shouldhelpgc = c.nextFree(tinySpanClass)
+            }   
+// 分配空间      
+            x = unsafe.Pointer(v)
+           (*[2]uint64)(x)[0] = 0
+           (*[2]uint64)(x)[1] = 0
+           size = maxTinySize
+        } else {
+          // 根据对象大小，映射到其所属的 span 的等级(0~66）
+          var sizeclass uint8
+          if size <= smallSizeMax-8 {
+              sizeclass = size_to_class8[divRoundUp(size, smallSizeDiv)]
+          } else {
+              sizeclass = size_to_class128[divRoundUp(size-smallSizeMax, largeSizeDiv)]
+          }        
+          // 对应 span 等级下，分配给每个对象的空间大小(0~32KB)
+          size = uintptr(class_to_size[sizeclass])
+          // 创建 spanClass 标识，其中前 7 位对应为 span 的等级(0~66)，最后标识表示了这个对象 gc 时是否需要扫描
+          spc := makeSpanClass(sizeclass, noscan) 
+          // 获取 mcache 中的 span
+          span = c.alloc[spc]  
+          // 从 mcache 的 span 中尝试获取空间        
+          v := nextFreeFast(span)
+          if v == 0 {
+          // mcache 分配空间失败，则通过 mcentral、mheap 兜底            
+             v, span, shouldhelpgc = c.nextFree(spc)
+          }     
+          // 分配空间  
+          x = unsafe.Pointer(v)
+          // ...
+       }      
+       // 大于 32KB 的大对象      
+   } else {
+       // 从 mheap 中获取 0 号 span
+       span = c.allocLarge(size, noscan)
+       span.freeindex = 1
+       span.allocCount = 1
+       size = span.elemsize         
+       // 分配空间   
+        x = unsafe.Pointer(span.base())
+   }  
+   // ...
+   return x
+}                               
+```  
+## 3.3 步骤（1）：tiny 分配  
+  
+每个 P 独有的 mache 会有个微对象分配器，基于 offset 线性移动的方式对微对象进行分配，每 16B 成块，对象依据其大小，会向上取整为 2 的整数次幂进行空间补齐，然后进入分配流程.  
+  
+   
+  
+![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuXibKvib2fj2vlIia93waBCNwPB8pPjJDE0lJCiaKDENhQtWAicxibLleickqpd2YrvlAT0GqHv77yWvZQw/640?wx_fmt=png "")  
+  
+   
+```go
+    noscan := typ == nil || typ.ptrdata == 0
+    // ...
+        if noscan && size < maxTinySize {
+        // tiny 内存块中，从 offset 往后有空闲位置
+          off := c.tinyoffset
+          // ...
+            // 如果当前 tiny 内存块空间还够用，则直接分配并返回
+            if off+size <= maxTinySize && c.tiny != 0 {
+            // 分配空间
+                x = unsafe.Pointer(c.tiny + off)
+                c.tinyoffset = off + size
+                c.tinyAllocs++
+                mp.mallocing = 0
+                releasem(mp)
+                return x
+            }
+           // ...
+        }
+```  
+  
+   
+  
+   
+## 3.4 步骤（2）：mcache 分配  
+```go
+          // 根据对象大小，映射到其所属的 span 的等级(0~66）
+          var sizeclass uint8
+          // get size class ....     
+          // 对应 span 等级下，分配给每个对象的空间大小(0~32KB)
+          // get span class
+          spc := makeSpanClass(sizeclass, noscan) 
+          // 获取 mcache 中的 span
+          span = c.alloc[spc]  
+          // 从 mcache 的 span 中尝试获取空间        
+          v := nextFreeFast(span)
+          if v == 0 {
+          // mcache 分配空间失败，则通过 mcentral、mheap 兜底            
+             v, span, shouldhelpgc = c.nextFree(spc)
+          }     
+          // 分配空间  
+          x = unsafe.Pointer(v)
+```  
+  
+   
+  
+在 mspan 中，基于 Ctz64 算法，根据 mspan.allocCache 的 bitMap 信息快速检索到空闲的 object 块，进行返回.  
+  
+代码位于 runtime/malloc.go 文件中：  
+```go
+func nextFreeFast(s *mspan) gclinkptr {
+    // 通过 ctz64 算法，在 bit map 上寻找到首个 object 空位
+    theBit := sys.Ctz64(s.allocCache) 
+    if theBit < 64 {
+        result := s.freeindex + uintptr(theBit)
+        if result < s.nelems {
+            freeidx := result + 1
+            if freeidx%64 == 0 && freeidx != s.nelems {
+                return 0
+            }
+            s.allocCache >>= uint(theBit + 1)
+            // 偏移 freeindex 
+            s.freeindex = freeidx
+            s.allocCount++
+            // 返回获取 object 空位的内存地址 
+            return gclinkptr(result*s.elemsize + s.base())
+        }
+    }
+    return 0
+}
+```  
+  
+   
+## 3.5 步骤（3）：mcentral 分配  
+  
+当 mspan 无可用的 object 内存块时，会步入 mcache.nextFree 方法进行兜底.  
+  
+代码位于 runtime/mcache.go 文件中：  
+```go
+func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bool) {
+    s = c.alloc[spc]
+    // ...
+    // 从 mcache 的 span 中获取 object 空位的偏移量
+    freeIndex := s.nextFreeIndex()
+    if freeIndex == s.nelems {
+        // ...
+        // 倘若 mcache 中 span 已经没有空位，
+        // 则调用 refill 方法从 mcentral 或者 mheap 中获取新的 span    
+        c.refill(spc)
+        // ...
+        // 再次从替换后的 span 中获取 object 空位的偏移量
+        s = c.alloc[spc]
+        freeIndex = s.nextFreeIndex()
+    }
+    // ...
+    v = gclinkptr(freeIndex*s.elemsize + s.base())
+    s.allocCount++
+    // ...
+    return
+}    
+```  
+  
+   
+  
+倘若 mcache 中，对应的 mspan 空间不足，则会在 mcache.refill 方法中，向更上层的 mcentral 乃至 mheap 获取 mspan，填充到 mache 中:  
+  
+代码位于 runtime/mcache.go 文件中：  
+```go
+func (c *mcache) refill(spc spanClass) {  
+    s := c.alloc[spc]
+    // ...
+    // 从 mcentral 当中获取对应等级的 span
+    s = mheap_.central[spc].mcentral.cacheSpan()
+    // ...
+    // 将新的 span 添加到 mcahe 当中
+    c.alloc[spc] = s
+}
+```  
+  
+   
+  
+mcentral.cacheSpan 方法中，会加锁（spanClass 级别的 sweepLocker），分别从 partial 和 full 中尝试获取有空间的 mspan:  
+  
+代码位于 runtime/mcentral.go 文件中：  
+```go
+func (c *mcentral) cacheSpan() *mspan {
+    // ...
+    var sl sweepLocker    
+    // ...
+    sl = sweep.active.begin()
+    if sl.valid {
+        for ; spanBudget >= 0; spanBudget-- {
+            s = c.partialUnswept(sg).pop()
+            // ...
+            if s, ok := sl.tryAcquire(s); ok {
+                // ...
+                sweep.active.end(sl)
+                goto havespan
+            }
+            
+        // 通过 sweepLock，加锁尝试从 mcentral 的非空链表 full 中获取 mspan
+        for ; spanBudget >= 0; spanBudget-- {
+            s = c.fullUnswept(sg).pop()
+           // ...
+            if s, ok := sl.tryAcquire(s); ok {
+                // ...
+                sweep.active.end(sl)
+                goto havespan
+                }
+                // ...
+            }
+        }
+        // ...
+    }
+    // ...
+
+
+    // 执行到此处时，s 已经指向一个存在 object 空位的 mspan 了
+havespan:
+    // ...
+    return
+}
+```  
+  
+   
+## 3.6 步骤（4）：mheap 分配  
+  
+在 mcentral.cacheSpan 方法中，倘若从 partial 和 full 中都找不到合适的 mspan 了，则会调用 mcentral 的 grow 方法，将事态继续升级：  
+```go
+func (c *mcentral) cacheSpan() *mspan {
+    // ...
+    // mcentral 中也没有可用的 mspan 了，则需要从 mheap 中获取，最终会调用 mheap_.alloc 方法
+    s = c.grow()
+   // ...
+
+
+    // 执行到此处时，s 已经指向一个存在 object 空位的 mspan 了
+havespan:
+    // ...
+    return
+}
+```  
+  
+   
+  
+经由 mcentral.grow 方法和 mheap.alloc 方法的周转，最终会步入 mheap.allocSpan 方法中：  
+```
+func (c *mcentral) grow() *mspan {
+    npages := uintptr(class_to_allocnpages[c.spanclass.sizeclass()])
+    size := uintptr(class_to_size[c.spanclass.sizeclass()])
+
+
+    s := mheap_.alloc(npages, c.spanclass)
+    // ...
+
+
+    // ...
+    return s
+}
+```  
+  
+   
+  
+代码位于 runtime/mheap.go  
+==调用`systemstack`意味着交接到`g0`进行系统级调用==
+```go
+func (h *mheap) alloc(npages uintptr, spanclass spanClass) *mspan {
+    var s *mspan
+    systemstack(func() {
+        // ...
+        s = h.allocSpan(npages, spanAllocHeap, spanclass)
+    })
+    return s
+}
+```  
+  
+   
+  
+代码位于 runtime/mheap.go  
+```go
+func (h *mheap) allocSpan(npages uintptr, typ spanAllocType, spanclass spanClass) (s *mspan) {
+    gp := getg()
+    base, scav := uintptr(0), uintptr(0)
+    
+    // ...此处实际上还有一阶缓存，是从每个 P 的页缓存 pageCache 中获取空闲页组装 mspan，此处先略去了...
+    
+    // 加上堆全局锁
+    lock(&h.lock)
+    if base == 0 {
+        // 通过基数树索引快速寻找满足条件的连续空闲页
+        base, scav = h.pages.alloc(npages)
+        // ...
+    }
+    
+    // ...
+    unlock(&h.lock)
+
+
+HaveSpan:
+    // 把空闲页组装成 mspan
+    s.init(base, npages)
+    
+    // 将这批页添加到 heapArena 中，建立由页指向 mspan 的映射
+    h.setSpans(s.base(), npages, s)
+    // ...
+    return s
+}
+```  
+  
+倘若对 mheap 空闲页分配器基数树 pageAlloc 分配空闲页的源码感兴趣，莫慌，3.8 小节见.  
+  
+   
+## 3.7 步骤（5）：向操作系统申请  
+  
+倘若 mheap 中没有足够多的空闲页了，会发起 mmap 系统调用，向操作系统申请额外的内存空间.  
+  
+代码位于 runtime/mheap.go 文件的 mheap.grow 方法中：  
+```
+func (h *mheap) grow(npage uintptr) (uintptr, bool) {
+    av, asize := h.sysAlloc(ask)
+}
+```  
+  
+   
+```
+func (h *mheap) sysAlloc(n uintptr) (v unsafe.Pointer, size uintptr) {
+       v = sysReserve(unsafe.Pointer(p), n)
+}
+```  
+  
+   
+```
+func sysReserve(v unsafe.Pointer, n uintptr) unsafe.Pointer {
+    return sysReserveOS(v, n)
+}
+```  
+  
+   
+```
+func sysReserveOS(v unsafe.Pointer, n uintptr) unsafe.Pointer {
+    p, err := mmap(v, n, _PROT_NONE, _MAP_ANON|_MAP_PRIVATE, -1, 0)
+    if err != 0 {
+        return nil
+    }
+    return p
+}
+```  
+  
+   
+## 3.8 步骤（4）拓展：基数树寻页  
+  
+核心源码位于 runtime/pagealloc.go 的 pageAlloc 方法中，要点都以在代码中给出注释：  
+```go
+func (p *pageAlloc) find(npages uintptr) (uintptr, offAddr) {
+    // 必须持有堆锁
+    assertLockHeld(p.mheapLock)
+
+
+    // current level.
+    i := 0
+
+
+    // ...
+    lastSum := packPallocSum(0, 0, 0)
+    lastSumIdx := -1
+
+
+nextLevel:
+    // 1 ~ 5 层依次遍历
+    for l := 0; l < len(p.summary); l++ {
+        // ...
+        // 根据上一层的 index，映射到下一层的 index.
+        // 映射关系示例：上层 0 -> 下层 [0~7]
+        //             上层 1 -> 下层 [8~15]
+        //             以此类推
+        i <<= levelBits[l]
+        entries := p.summary[l][i : i+entriesPerBlock]
+        // ...
+        // var levelBits = [summaryLevels]uint{
+        //   14,3,3,3,3
+        // }
+        // 除第一层有 2^14 个节点外，接下来每层都只要关心 8 个 节点.
+        // 由于第一层有 2^14 个节点，所以 heap 内存上限为 2^14 * 16G = 256T
+        var base, size uint
+        for j := j0; j < len(entries); j++ {
+            sum := entries[j]
+            // ...
+            // 倘若当前节点对应内存空间首部即满足，直接返回结果
+            s := sum.start()
+            if size+s >= uint(npages) {               
+                if size == 0 {
+                    base = uint(j) << logMaxPages
+                }             
+                size += s
+                break
+            }
+            // 倘若当前节点对应内存空间首部不满足，但是内部最长连续页满足，则到下一层节点展开搜索
+            if sum.max() >= uint(npages) {               
+                i += j
+                lastSumIdx = i
+                lastSum = sum
+                continue nextLevel
+            }
+            // 即便内部最长连续页不满足，还可以尝试将尾部与下个节点的首部叠加，看是否满足
+            if size == 0 || s < 1<<logMaxPages {
+                size = sum.end()
+                base = uint(j+1)<<logMaxPages - size
+                continue
+            }
+            // The entry is completely free, so continue the run.
+            size += 1 << logMaxPages
+        }
+    
+    // 根据 i 和 j 可以推导得到对应的内存地址，进行返回
+    ci := chunkIdx(i)
+    addr := chunkBase(ci) + uintptr(j)*pageSize
+    // ...
+    return addr, p.findMappedAddr(firstFree.base)
+}
+```  
+  
+   
+# 4 展望  
+  
+祝贺，到此为止，整个 Golang 内存分配流程已经梳理完毕.  
+  
+两周内，我会带来新作——Golang 垃圾回收机制.  
+  
+Go 友们不见不散~  
+  
+  

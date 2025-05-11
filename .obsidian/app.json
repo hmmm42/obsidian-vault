@@ -1,0 +1,16 @@
+{
+  "trashOption": "system",
+  "newFileLocation": "current",
+  "attachmentFolderPath": "annex",
+  "vimMode": true,
+  "strictLineBreaks": false,
+  "readableLineLength": true,
+  "promptDelete": false,
+  "pdfExportSettings": {
+    "pageSize": "Letter",
+    "landscape": false,
+    "margin": "0",
+    "downscalePercent": 100
+  },
+  "tabSize": 2
+}
