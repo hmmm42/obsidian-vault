@@ -213,7 +213,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 399.5
+    "width": 366.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -227,7 +227,7 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "98378a0d133f11e4",
+  "active": "f64f28fef9293243",
   "lastOpenFiles": [
     "新建 文本文档.txt",
     "Database/MySQL/索引.md",
