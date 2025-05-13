@@ -22,7 +22,6 @@ GC中各子流程聚焦于不同源码文件中，目录供大家一览，感兴
   
 <table><thead style="line-height: 1.75;background: rgba(0, 0, 0, 0.05);font-weight: bold;color: rgb(63, 63, 63);"><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">流程</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">文件</strong></td></tr></thead><tbody><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记准备</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">调步策略</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcpacer.go</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">并发标记</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcmark.go</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">清扫流程</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/msweep.go</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">位图标识</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mbitmap.go</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">触发屏障</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mbwbuf.go</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">内存回收</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcscavenge.go</td></tr></tbody></table>  
   
-   
 # 2 触发GC  
   
 下面顺沿源码框架，开启走读流程. 本章首先聊聊，GC阶段是如何被触发启动的.  
@@ -38,7 +37,8 @@ GC中各子流程聚焦于不同源码文件中，目录供大家一览，感兴
   
    
   
-在触发GC时，会通过 gcTrigger.test 方法，结合具体的触发事件类型进行触发条件的校验，校验条件展示于上表，对应的源码如下：  
+在触发GC时，会通过 gcTrigger.test 方法，结合具体的触发事件类型进行触发条件的校验，校验条件展示于上表，对应的源码如下： 
+
 ```
 type gcTriggerKind int
 
@@ -90,6 +90,7 @@ runtime 包初始化的时候，即会异步开启一个守护协程，通过 fo
 当被唤醒后，则会调用 gcStart 方法进入标记准备阶段，尝试开启新一轮 GC，此时触发 GC 的事件类型正是 gcTriggerTime（定时触发）.  
   
 在 gcStart 方法内部，还会通过 gcTrigger.test 方法进一步校验触发GC的条件是否满足，留待第3章再作展开.  
+
 ```
 // runtime 包下的全局变量
 var  forcegc   forcegcstate
@@ -199,7 +200,8 @@ func (t gcTrigger) test() bool {
   
 （1）对象分配触发GC  
   
-mallocgc 是分配对象的主流程方法：  
+mallocgc 是分配对象的主流程方法： 
+
 ```
 func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
     // ...
@@ -268,6 +270,7 @@ func (t gcTrigger) test() bool {
 <table><thead style="line-height: 1.75;background: rgba(0, 0, 0, 0.05);font-weight: bold;color: rgb(63, 63, 63);"><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">方法</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">文件</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">作用</strong></td></tr></thead><tbody><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">GC</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">手动触发GC主流程方法</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcStart</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记准备阶段主流程方法</td></tr></tbody></table>  
   
 用户手动触发 GC时，事件类型为 gcTriggerCycle.  
+
 ```
 func GC() {
     // ...
@@ -287,9 +290,7 @@ func (t gcTrigger) test() bool {
     }
     return true
 }
-```  
-  
-   
+```    
 # 3 标记准备  
   
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZu8WccNVUMwlnMQBKA4T5pPC1oU6hh9nNb86jMBHoPT6cpsh05ygucxr2KtpHVWvVXiaNn4XibeTTVQ/640?wx_fmt=png "")  
@@ -300,7 +301,7 @@ func (t gcTrigger) test() bool {
   
 <table><thead style="line-height: 1.75;background: rgba(0, 0, 0, 0.05);font-weight: bold;color: rgb(63, 63, 63);"><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">方法</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">文件</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">作用</strong></td></tr></thead><tbody><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcStart</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记准备阶段主流程方法</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcBgMarkStartWorkers</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">批量启动标记协程 ，数量对应于 P 的个数</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcBgMarkWorker</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记协程主流程方法，启动之初会先阻塞挂起，待被唤醒后真正执行任务</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">stopTheWorldWithSema</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">即STW，停止P.</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcControllerState.startCycle</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcspacer.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">限制标记协程执行频率，目标是令标记协程对CPU的占用率趋近于 25%</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">setGCPhase</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">更新GC阶段. 当为标记阶段（GCMark）时会启用混合写屏障</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcMarkTinyAllocs</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记 mcache 中的 tiny 对象</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">startTheWorldWithSema</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">与STW相反，会重新唤醒各个P</td></tr></tbody></table>  
   
-   
+
 ## 3.1 主流程  
   
 gcStart 是标记准备阶段的主流程方法，方法中完成的工作包括：  
@@ -317,7 +318,8 @@ gcStart 是标记准备阶段的主流程方法，方法中完成的工作包括
 - • 标记mcache中的tiny对象  
   
 - • Start the world  
-  
+
+
 ```go
 func gcStart(trigger gcTrigger) {
     // ...
@@ -523,6 +525,7 @@ func (c *gcControllerState) startCycle(markStartTime int64, procs int, tr
 ## 3.5 设置写屏障  
   
 随后，gcStart方法会调用setGCPhase方法，标志GC正式进入并发标记（GCmark）阶段. 我们观察该方法代码实现，可以注意到，在_GCMark和_GCMarkTermination阶段中，会启用混合写屏障.  
+==具体靠编译器实现==
 ```
 func setGCPhase(x uint32) {
     atomic.Store(&gcphase, x)
@@ -740,6 +743,7 @@ func (c *gcControllerState) findRunnableGCWorker(_p_ *p, now int64) (*g,�
   
    
 ## 4.2 并发标记启动  
+==`gcw`队列就是存储灰色节点的队列==
   
 <table><thead style="line-height: 1.75;background: rgba(0, 0, 0, 0.05);font-weight: bold;color: rgb(63, 63, 63);"><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">方法</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">文件</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">作用</strong></td></tr></thead><tbody><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcBgMarkWorker</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记协程主方法</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcDrain</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcmark.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">循环处理gcw队列主方法</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">markroot</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcmark.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记根对象</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">scanobject</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcmark.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">扫描一个对象，将其指向对象分别置灰</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">greyobject</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcmark.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">将一个对象置灰</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">markBits.setMarked</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mbitmap.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记一个对象</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcWork.putFast/put</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcwork.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">将一个对象加入gcw队列</td></tr></tbody></table>  
   
@@ -1161,7 +1165,7 @@ done:
   
    
   
-对应于idle模式的check函数是pollwork，方法中判断P本地队列存在就绪的g或者存在就绪的网络写成，就会对当前标记协程进行中断：  
+对应于idle模式的check函数是pollwork，方法中判断P本地队列存在就绪的g或者存在就绪的网络协程，就会对当前标记协程进行中断：  
 ```
 func pollWork() bool {
     if sched.runqsize != 0 {
@@ -1203,16 +1207,16 @@ func pollFractionalWorkerExit() bool {
 在gcDrain方法正式开始循环扫描前，还会先对根对象进行扫描标记. Golang中的根对象包括如下几项：  
 - • .bss段内存中的未初始化全局变量  
   
-- • .data段内存中的已初始化变量）  
+- • .data段内存中的已初始化变量
   
-- • span 中的 finalizer  
+- • span 中的 finalizer  *GC中的回调逻辑*
   
 - • 各协程栈  
   
    
   
 实现根对象扫描的方法是markroot：  
-```
+```go
 func markroot(gcw *gcWork, i uint32, flushBgCredit bool) int64 {
     var workDone int64
     var workCounter *atomic.Int64
@@ -1302,7 +1306,8 @@ func scanframeworker(frame *stkframe, state *stackScanState, gcw *gcWork)�
 不论是全局变量扫描还是栈变量扫描，底层都会调用到scanblock方法. 在扫描时，会通过位图ptrmask辅助加速流程. 在 ptrmask当中，每个bit位对应了一个指针大小（8B）的位置的标识信息，指明当前位置是否是指针，倘若非指针，则直接跳过扫描.  
   
 此外,在标记一个对象时,需要获取到该对象所在mspan,这一过程会使用到heapArena中关于页和mspan间的映射索引（如有存疑可以看我的文章 Golang内存模型与分配机制），这部分内容放在 4.7 小节中集中阐述.  
-```
+==保证满足栈上的所有对象都置黑==
+```go
 func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState) {
   // ...
   b := b0
@@ -1323,6 +1328,7 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackS
         if p != 0 {
           if obj, span, objIndex := findObject(p, b, i); obj != 0 {
             greyobject(obj, b, i, span, gcw, objIndex)
+            // 一个灰对象的所有直接引用对象都置灰了, 就认为这个灰对象置黑了
           } else if stk != nil && p >= stk.stack.lo && p < stk.stack.hi {
            stk.putPtr(p, false)
           }
@@ -1586,13 +1592,18 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
   
    
 ## 5.2 辅助标记执行  
+
+> **GC 辅助标记** 就像是 **让用户程序（Goroutine）在分配内存前，暂时停下来，帮忙 GC 做一部分标记工作**。
+  **触发时机：** 当 GC 发现用户程序分配内存的速度太快，自己快“喘不过气”，跟不上标记进度时。
+> **目的是：** 强制减缓用户程序分配内存的速度（因为分配前要先干活），并让用户程序“分担”一部分 GC 标记任务，从而帮助 GC 尽快完成当前的标记周期，避免堆内存无限增长。
+  **代价是：** 在辅助标记发生时，内存分配操作的延迟会增加，因为 Goroutine 被“借用”去做了 GC 的工作。
   
 由于各对象中，可能存在部分不包含指针的字段，这部分字段是无需进行扫描的. 因此真正需要扫描的内存量会小于实际的内存大小，两者之间的比例通过gcController.assistWorkPerByte进行记录.  
   
-于是当一个用户协程在GC期间需要分配M大小的新对象时，实际上需要完成的辅助标记量应该为assistWorkPerByte*M.  
+于是当一个用户协程在GC期间需要分配M大小的新对象时，实际上需要完成的辅助标记量应该为assistWorkPerByte \* M.  
   
 辅助标记逻辑位于gcAssistAlloc方法. 在该方法中，会先尝试从公共资产池gcController.bgScanCredit中偷取资产，倘若资产仍然不够，则会通过systemstack方法切换至g0，并在 gcAssistAlloc1 方法内调用 gcDrainN 方法参与到并发标记流程当中.  
-```
+```go
 func gcAssistAlloc(gp *g) {
     // ...
     // 计算待完成的任务量
@@ -1640,7 +1651,6 @@ func gcAssistAlloc(gp *g) {
     // ...
 }
 ```  
-#   
 # 6 标记终止  
   
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZu8WccNVUMwlnMQBKA4T5pPvhtP0Mfg1ZNdCItp8MUycSGib9CJ1dJosjH9SQZvJ73Nibib0R8p3oY1Q/640?wx_fmt=png "")  
@@ -1648,11 +1658,11 @@ func gcAssistAlloc(gp *g) {
    
   
 <table><thead style="line-height: 1.75;background: rgba(0, 0, 0, 0.05);font-weight: bold;color: rgb(63, 63, 63);"><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">方法</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">文件</strong></td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;"><strong style="line-height: 1.75;color: rgb(15, 76, 129);">作用</strong></td></tr></thead><tbody><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcBgMarkWorker</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">标记协程主方法</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcMarkDone</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">所有标记任务完成后处理</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">stopTheWorldWithSema</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/proc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">停止所有用户协程</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcMarkTermination</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">进入标记终止阶段</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">gcSweep</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">唤醒后台清扫协程</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">sweepone</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcsweep.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">每次清扫一个mspan</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">sweepLocked.sweep</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/mgcsweep.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">完成mspan中的bitmap更新</td></tr><tr><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">startTheWorldWithSema</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">runtime/proc.go</td><td style="line-height: 1.75;border-color: rgb(223, 223, 223);padding: 0.25em 0.5em;color: rgb(63, 63, 63);">将所有用户协程恢复为可运行态</td></tr></tbody></table>  
-  
-   
+
 ## 6.1 标记完成  
   
-在并发标记阶段的gcBgMarkWorker方法中，当最后一个标记协程也完成任务后，会调用gcMarkDone方法，开始执行并发标记后处理的逻辑.  
+在并发标记阶段的gcBgMarkWorker方法中，当最后一个标记协程也完成任务后，会调用gcMarkDone方法，开始执行并发标记后处理的逻辑.
+
 ```
 func gcBgMarkWorker() {
     // ...
@@ -1666,12 +1676,10 @@ func gcBgMarkWorker() {
 }
 ```  
   
-   
-  
 gcMarkDone方法中，会遍历释放所有P的写屏障缓存，查看是否存在因屏障机制遗留的灰色对象，如果有，则会推出gcMarkDone方法，回退到gcBgMarkWorker的主循环中，继续完成标记任务.  
   
 倘若写屏障中也没有遗留的灰对象，此时会调用STW停止世界，并步入gcMarkTermination方法进入标记终止阶段.  
-```
+```go
 func gcMarkDone()
 top:    
     if !(gcphase == _GCmark && work.nwait == work.nproc && !gcMarkWorkAvailable(nil)) {
@@ -1703,8 +1711,7 @@ top:    
     gcMarkTermination()
 }
 ```  
-  
-   
+
 ## 6.2 标记终止  
   
 gcMarkTermination方法包括几个核心步骤：  
@@ -2012,7 +2019,7 @@ func bgscavenge(c chan int) {
   
 scavengerState.run方法中，会开启循环，经历pageAlloc.scavenge -> pageAlloc.scavengeOne 的调用链，最终通过sysUnused方法进行空闲内存页的回收.  
   
-   
+    
 ```
 func (s *scavengerState) run() (released uintptr, worked float64) {
     // ...

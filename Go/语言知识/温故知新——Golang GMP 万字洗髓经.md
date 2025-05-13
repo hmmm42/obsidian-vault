@@ -249,11 +249,16 @@ p （processor）是 gmp 中的调度器，其类定义代码中包含如下核�
   
 - runnext：lrq 中的特定席，指向下一个即将执行的 g  
   
-```
+```go
 type p struct{
     id          int32
-    /*        p 的状态        // p 因缺少 g 而进入空闲模式，此时会被添加到全局的 idle p 队列中        _Pidle = iota // 0        // p 正在运行中，被 m 所持有，可能在运行普通 g，也可能在运行 g0        _Prunning // 1        // p 所关联的 m 正在执行系统调用. 此时 p 可能被窃取并与其他 m 关联        _Psyscall // 2        // p 已被终止        _Pdead // 4    */
-    status      uint32// one of pidle/prunning/...
+    /*       
+     p 的状态        // p 因缺少 g 而进入空闲模式，此时会被添加到全局的 idle p 队列中   
+    _Pidle = iota // 0        // p 正在运行中，被 m 所持有，可能在运行普通 g，也可能在运行 g0
+    _Prunning // 1        // p 所关联的 m 正在执行系统调用. 此时 p 可能被窃取并与其他 m 关联       
+     _Psyscall // 2        // p 已被终止       
+     _Pdead // 4    */
+    status      uint32   // one of pidle/prunning/...
     // 进入 schedt pidle 链表时指向相邻 p 的 next 指针
     link        puintptr        
     // ...
