@@ -459,7 +459,7 @@ func gogo(buf *gobuf)
 - execute：更新 g 的上下文信息，调用 gogo 方法，将 m 的执行权由 g0 切换到 g  
   
 上述方法均实现于 runtime/proc.go 文件中：  
-```
+```go
 // 执行方为 g0
 func schedule(){
     // 获取当前 g0 

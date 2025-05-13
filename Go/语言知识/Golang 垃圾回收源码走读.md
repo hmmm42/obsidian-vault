@@ -318,7 +318,7 @@ gcStart 是标记准备阶段的主流程方法，方法中完成的工作包括
   
 - • Start the world  
   
-```
+```go
 func gcStart(trigger gcTrigger) {
     // ...
     // 检查是否达到 GC 条件，会根据 trigger 类型作 dispatch，常见的包括堆内存大小、GC 时间间隔、手动触发的类型
