@@ -1,14 +1,8 @@
-#  gorm 框架使用教程   
-原创 小徐先生1212  小徐先生的编程世界   2023-10-20 19:06  
-  
 # 0 前言  
   
 近期我们在分享有关于 golang-sql 系列专题，前两期分享内容前瞻：  
 - • [Golang sql 标准库源码解析](http://mp.weixin.qq.com/s?__biz=MzkxMjQzMjA0OQ==&mid=2247484727&idx=1&sn=a05080a9494438c0fa57c92b9f159d55&chksm=c10c4be9f67bc2ff48b37fe80215f55f2338b700f55896ff2452dc183464c025695f2d272620&scene=21#wechat_redirect)  
-  
-  
 - • [Golang mysql 驱动源码解析](http://mp.weixin.qq.com/s?__biz=MzkxMjQzMjA0OQ==&mid=2247484744&idx=1&sn=d315ce9c80a502a35677595638d450bb&chksm=c10c4b96f67bc2806947de5e528383bb81471f3b8be5b27796d6dc2f030d7bf5ed02145ae077&scene=21#wechat_redirect)  
-  
   
 从本期开始，我们正式步入 gorm 框架的领域.  
   
