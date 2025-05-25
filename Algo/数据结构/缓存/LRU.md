@@ -1,4 +1,5 @@
 [[Algo/数据结构/哈希表#链表加强|链表加强哈希表]]
+#hot100 
 ```go
 type lruEntry struct {
 	key   int
