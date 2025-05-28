@@ -563,8 +563,6 @@ type resolver struct {
 }
 ```  
   
-   
-  
 在 etcd resolver builder 构建 resolver 的过程中，会获取到一个来自 etcd 客户端的 channel，用于持续监听 endpoint 的变更事件，以维护更新客户端缓存的 endpoint 列表.  
   
 构建出 resolver 后，会调用 go resolver.watch 方法开启一个守护协程，持续监听 channel.  
