@@ -32,17 +32,13 @@ It maintains multiple segments, each with its own lock, to reduce lock contentio
 `grpc.*Client`只在`Fetch`方法内被使用, `Fetcher`中的是`etcd`的`clientv3`
 
 3个`client`区分
-*clientv3.Client (来自 go.etcd.io/etcd/client/v3):
-
-
+## `*clientv3.Client` (来自 go.etcd.io/etcd/client/v3)
 作用: etcd 客户端。
 职责: 与 etcd 服务器集群进行交互，用于服务注册、服务发现、租约管理等。
 在代码中的位置:
 作为 internal/transport/grpc/fetcher.go 中 Client 结构体的一个字段 (conn)。
 在 pkg/etcd/discovery 和 pkg/etcd/registry 包中被创建和使用，以执行具体的 etcd 操作。
-Client (定义在 internal/transport/grpc/fetcher.go):
-
-
+## Client (定义在 internal/transport/grpc/fetcher.go):
 作用: 缓存数据获取器 / 对等节点交互发起者。这是您项目自定义的一个结构体。
 职责: 实现了 cache.Fetcher 接口。它封装了从任意一个提供指定服务（由 serviceName 字段指定，例如 "GroupCache"）的远程对等节点获取缓存数据的发起逻辑。
 内部结构: 持有服务名 (serviceName) 和一个 etcd 客户端 (clientv3.Client)。
@@ -54,7 +50,7 @@ Fetch 随后使用这个临时的 grpc.ClientConn 来执行真正的 RPC 调用�
 关键点: 这个 Client 结构体本身不是一个到特定 gRPC 对等节点的持久连接。它更像是一个“请求发起器”，知道如何通过 etcd 找到并连接到一个合适的目标节点来完成 Fetch 操作。它被存储在 picker.Server 的 clients map 中，与对等节点的地址关联，作为向该地址（或更准确地说，向负责该地址所代表的 key 的节点）发起请求的入口。
 grpc.ClientConn
 
-`*grpc.ClientConn` (来自 google.golang.org/grpc)
+## `*grpc.ClientConn` (来自 google.golang.org/grpc)
 作用: gRPC 连接。
 职责: 代表一个到特定 gRPC 服务器端点的实际网络连接。
 在代码中的位置:
