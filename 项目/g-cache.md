@@ -1,3 +1,6 @@
+# 缓存
+支持 [[LRU]], [[LFU]], ARC, ==并发安全==
+## LRU
 LRU缓存中分段（segment）设计的原因
 在CacheUseLRU的实现中，采用分段（segmented）设计有几个重要原因：
 

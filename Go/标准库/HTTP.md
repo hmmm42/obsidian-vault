@@ -156,7 +156,8 @@ func HandleFunc(pattern string, handler func(ResponseWriter, *Request)) {
    
   
 在 ServeMux.HandleFunc 内部会将处理函数 handler 转为实现了 ServeHTTP 方法的 HandlerFunc 类型，将其作为 Handler interface 的实现类注册到 ServeMux 的路由 map 当中.  
-```
+==已经保证 handler 符合 HandlerFunc 类型, 包装后获得`ServeHTTP`方法, 实现 Handler 接口==
+```go
 type HandlerFunc func(ResponseWriter, *Request)
 
 
@@ -168,7 +169,7 @@ func (f HandlerFunc) ServeHTTP(w ResponseWriter, r *Request) {
 
 func (mux *ServeMux) HandleFunc(pattern string, handler func(ResponseWriter, *Request)) {
     // ...
-    mux.Handle(pattern, HandlerFunc(handler))
+    mux.Handle(pattern, HandlerFunc(handler))  
 }
 ```  
   
@@ -218,6 +219,7 @@ func appendSorted(es []muxEntry, e muxEntry) []muxEntry {
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZsDHlrfmEbadIGo2Jzdibr5ia6znOtuHLpic1wTFJE7J4ialOzmU6WJCj4Viay6tHOLD4jJuJReEJJlhyw/640?wx_fmt=png "")  
   
 调用 net/http 包下的公开方法 ListenAndServe，可以实现对服务端的一键启动. 内部会声明一个新的 Server 对象，嵌套执行 Server.ListenAndServe 方法.  
+==如果`handler`为空, 则使用全局的单例`defaultServeMux `==
 ```
 func ListenAndServe(addr string, handler Handler) error {
     server := &Server{Addr: addr, Handler: handler}
@@ -248,9 +250,9 @@ func (srv *Server) ListenAndServe() error {
 Server.Serve 方法很核心，体现了 http 服务端的运行架构：for + listener.accept 模式.  
 - • 将 server 封装成一组 kv 对，添加到 context 当中  
   
-- • 开启 for 循环，每轮循环调用 Listener.Accept 方法阻塞等待新连接到达  
+- • 开启 for 循环，每轮循环调用 Listener.Accept 方法**阻塞**等待新连接到达  
   
-- • 每有一个连接到达，创建一个 goroutine 异步执行 conn.serve 方法负责处理  
+- • 每有一个连接到达，创建一个 **goroutine 异步**执行 conn.serve 方法负责处理  
   
 ```
 var ServerContextKey = &contextKey{"http-server"}
@@ -400,7 +402,7 @@ type Client struct {
 ```  
   
    
-  
+
 （2）RoundTripper  
   
 RoundTripper 是通信模块的 interface，需要实现方法 Roundtrip，即通过传入请求 Request，与服务端交互后获得响应 Response.  
@@ -492,8 +494,11 @@ type Response struct {
   
 整体方法链路如下图：  
   
-   
-  
+==两个 goroutine 使用同一个 conn==
+**writeLoop readLoop 解耦原因:**
+- 发出一次请求不一定要收到一次回复, 更灵活
+- 与 context 相结合, goroutine 监控 context, 实现超时关闭功能
+- 可以复用连接, 优雅
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZsDHlrfmEbadIGo2Jzdibr5ial0qAp1BnAnd0AtcmPjW4eFHfqc9ia8rfENAKXnwxPjvKIzdFWdoic1UQ/640?wx_fmt=png "")  
   
    
@@ -680,7 +685,7 @@ func (t *Transport) roundTrip(req *Request) (*Response, error) {
   
 - • 倘若无可用连接，则通过 queueForDial 方法，异步创建一个新的连接，并通过接收 ready channel 信号的方式，确认构造连接的工作已经完成.  
   
-```
+```go
 func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc *persistConn, err error) {
     // 获取连接的请求参数体
     w := &wantConn{
@@ -716,15 +721,13 @@ func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc
 ```  
   
    
-  
-（1）复用连接  
+### （1）复用连接  
 - • 尝试从 Transport.idleConn 中获取指向同一服务端的空闲连接 persisConn  
   
 - • 获取到连接后会调用 wantConn.tryDeliver 方法将连接绑定到 wantConn 请求参数上  
-  
 - • 绑定成功后，会关闭 wantConn.ready channel，以唤醒阻塞读取该 channel 的 goroutine  
   
-```
+```go
 func (t *Transport) queueForIdleConn(w *wantConn) (delivered bool) {
     // ...
     if list, ok := t.idleConn[w.key]; ok {
@@ -766,7 +769,7 @@ func (w *wantConn) tryDeliver(pc *persistConn, err error) bool {
   
    
   
-（2）创建连接  
+### （2）创建连接  
   
 在 queueForDial 方法会异步调用 Transport.dialConnFor 方法，创建新的 tcp 连接. 由于是异步操作，所以在上游会通过读 channel 的方式，等待创建操作完成.  
   
@@ -873,9 +876,7 @@ func (pc *persistConn) writeLoop() {    
 }
 ```  
   
-   
-  
-（3）归还连接  
+### （3）归还连接  
   
 有复用连接的能力，就必然存在归还连接的机制.  
   
@@ -958,7 +959,7 @@ func (t *Transport) putOrCloseIdleConn(pconn *persistConn) {
   
 而其中扮演应用者这一角色的，正式本小节谈到的主流程中的方法：persist  
 Conn.roundTrip：  
-- • 首先将 http 请求通过 persistConn.writech 发送给连接的守护协程 writeLoop，并进一步传送到服务端  
+- • 首先将 http 请求通过 persistConn.writech 发送给连接的守护协程 writeLoop，并进一步传送到服务端  ==将 resc 塞入到 reqch 中, 传给 readLoop, 告知这个请求正在等待响应==
   
 - • 其次通过读取 resc channel，接收由守护协程 readLoop 代理转发的客户端响应数据.  
   
@@ -986,7 +987,17 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, 
 }
 ```  
   
-   
+**整体流程:**
+1. `roundTrip` 方法被调用，准备发起一个 HTTP 请求。
+2. 创建一个用于接收响应的临时 channel `resc`.
+3. 将包含请求信息和错误 channel 的 `writeRequest` 发送到 `pc.writech`，通知 `pc.writeLoop` Goroutine 发送请求数据。
+4. 将包含请求、取消键和 `resc` channel 的 `requestAndChan` 发送到 `pc.reqch`，告知 `pc.readLoop` Goroutine 这个请求正在等待响应，并将 `resc` channel 与该请求关联起来。
+5. `roundTrip` 方法通过 `select` 语句监听 `resc` channel。
+6. `pc.writeLoop` Goroutine 从 `writech` 接收到 `writeRequest`，将请求头和 Body 写入 TCP 连接。
+7. `pc.readLoop` Goroutine 从 `reqch` 接收到 `requestAndChan`，记录请求和对应的 `resc` channel。
+8. `pc.readLoop` Goroutine 从 TCP 连接读取数据，解析 HTTP 响应。
+9. `pc.readLoop` 根据响应所属的请求，将解析后的响应数据封装成 `responseAndError` 发送到对应的 `resc` channel。
+10. `roundTrip` 方法从 `resc` channel 接收到 `responseAndError`，提取出 `Response` 并返回。
 # 4 展望  
   
 本文和大家一起讨论了 Golang net/http 标准库的底层实现.  
