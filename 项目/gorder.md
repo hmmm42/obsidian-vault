@@ -10,6 +10,7 @@ gin, grpc, rabbitMQ, redis, mysql, stripe
 - 接入 Stripe Api 实现在线支付功能.
 - 使用 gRPC 进行各服务间通信, 使用 RabbitMQ 进行支付事件的创建和消费, 实现了支付流程的异步处理.
 - 使用 Redis 实现分布式锁, 确保对库存记录的安全访问.
+==问题: redis 锁其实没起到作用, 修改为对商品的粒度==
 
 # 项目架构
 ```
