@@ -5,11 +5,11 @@ gin, grpc, rabbitMQ, redis, mysql, stripe
 
 ## 项目亮点
 
-- 基于 DDD 架构, 采用 CQRS 设计模式开发读写分离,基于依赖倒置原则优化模块间交互, 提高了代码的可扩展性和可维护性.
+- 基于 DDD 架构, 采用 CQRS 设计模式开发读写分离, 基于依赖倒置原则优化模块间交互, 提高了代码的可扩展性和可维护性.
 - 使用 Consul 进行服务注册与发现, 使用 OpenTelemetry 和 Jaeger 进行分布式链路追踪, 实现快速故障排查和性能瓶颈定位.
 - 接入 Stripe Api 实现在线支付功能.
 - 使用 gRPC 进行各服务间通信, 使用 RabbitMQ 进行支付事件的创建和消费, 实现了支付流程的异步处理.
-- 使用 Redis 实现分布式锁, 确保对库存记录的安全访问.
+- 使用 Redis 实现分布式锁, 确保每个订单请求只处理一次.
 ==问题: redis 锁其实没起到作用, 修改为对商品的粒度==
 
 # 项目架构
@@ -383,7 +383,7 @@ Why mongoDB?
 本模块简单, 为简化架构不使用 CQRS, consumer.go 直接调用 orderGPRC.UpdateOrder.
 #### check if items in stock
 需要获取 priceID, 两种逻辑:
-1. 从 stripe 获取: 实时性好, 链路更长
+1. 从 stripe 获取: 实时性好, 链路更长 ==限制qps==
 2. 从 redis 获取: 可能不一致
 
 ## 方便开发的工具
