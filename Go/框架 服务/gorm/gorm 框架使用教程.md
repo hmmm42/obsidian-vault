@@ -1095,7 +1095,7 @@ func Test_orderLimit(t *testing.T) {
 使用事务的流程：  
 - • 调用 db.Transaction 方法开启事务  
   
-- • 在 Transaction 中可以通过闭包函数执行事务逻辑，其中所有事务操作都需要围绕着 tx *gorm.DB 实例展开  
+- • 在 Transaction 中可以通过闭包函数执行事务逻辑，其中所有事务操作都需要围绕着 `tx *gorm.DB` 实例展开  
   
 - • 在闭包函数中，一旦返回 error 或者发生 panic，gorm 会自动执行回滚操作；倘若返回的 error 为 nil，gorm 会自动执行提交操作  
   
