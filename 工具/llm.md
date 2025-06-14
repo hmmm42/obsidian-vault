@@ -1,0 +1,6 @@
+- context7
+	- [upstash/context7: Context7 MCP Server -- Up-to-date code documentation for LLMs and AI code editors](https://github.com/upstash/context7)
+- roocode
+	- [roocode+gemini2.5p+ai studio才是目前最好的编程选择+使用教程实例 - 搞七捻三 - LINUX DO](https://linux.do/t/topic/625028/92)
+- AIstudioProxyAPI
+	- [CJackHwang/AIstudioProxyAPI: 一个Python + FastAPI + Playwright + Camoufox 中间层代理服务器，兼容 OpenAI API且支持参数设置、toolcall和ab测试模型等，通过将请求转发到 Google AI Studio 网页版的对话，并同样按照标准格式返回输出的工具。](https://github.com/CJackHwang/AIstudioProxyAPI)
