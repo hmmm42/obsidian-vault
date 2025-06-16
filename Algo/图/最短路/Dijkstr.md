@@ -1,6 +1,8 @@
+==单源最短路径, 不能处理负权重边==
 是[[BFS模板|BFS]]的扩展
 使用的前提: 路径中每增加一条边，路径的总权重就会增加/减少
 面试时[[优先队列]]用标准库实现
+复杂度$O(|V|+|E|)$
 ```go
 func networkDelayTime(times [][]int, n int, k int) int {
 	graph := make([][]struct{ to, wgt int }, n+1)
