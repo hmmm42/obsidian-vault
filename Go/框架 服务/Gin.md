@@ -1,4 +1,3 @@
-#toread 
 #  解析 Gin 框架底层原理   
 原创 小徐先生1212  小徐先生的编程世界   2023-03-03 18:54  
   
@@ -843,7 +842,7 @@ gin.Context 作为处理 http 请求的通用数据结构，不可避免地会�
   
 - • http 请求处理完成后，将 Context 放回 pool 中，用以后续复用  
   
-sync.Pool 并不是真正意义上的缓存，将其称为回收站或许更加合适，放入其中的数据在逻辑意义上都是已经被删除的，但在物理意义上数据是仍然存在的，这些数据可以存活两轮 GC 的时间，在此期间倘若有被获取的需求，则可以被重新复用.  
+sync.Pool 并不是真正意义上的缓存，将其称为回收站或许更加合适，放入其中的数据在逻辑意义上都是已经被删除的，但在物理意义上数据是仍然存在的，这些数据可以存活**两轮 GC** 的时间，在此期间倘若有被获取的需求，则可以被重新复用.  
   
 和对象池 sync.Pool 有关的内容可以阅读我的文章 《Golang 协程池 Ants 实现原理》，其中有将对象池作为协程池应用组件的前置知识点，进行详细讲解.  
   
@@ -899,7 +898,7 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request)�
     c.reset()
     // 处理 http 请求
     engine.handleHTTPRequest(c)
-    
+	    
     // 把 context 放回对象池
     engine.pool.Put(c)
 }
