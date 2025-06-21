@@ -370,7 +370,6 @@ type bmap struct {
     overflow uint8
 }
 ```  
-#   
 # 4 构造方法  
   
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZuARxegbGpWRTtYV5T52c5xjyPiaLXxITu6DCUvs6XQ6IRI1CdMoKU2cadficLhXro3bEHFSCGAxHjA/640?wx_fmt=png "")  
@@ -2305,4 +2304,4 @@ func advanceEvacuationMark(h *hmap, t *maptype, newbit uintptr) {
 }
 ```  
   
-  
+# 10 Go 1.24+ Swiss Table
