@@ -1,3 +1,6 @@
+> 参考:
+> [7天用Go从零实现分布式缓存GeeCache | 极客兔兔](https://geektutu.com/post/geecache.html)
+> [1055373165/ggcache: 支持 HTTP、RPC 和服务注册发现的分布式缓存系统（gRPC Group Cache）](https://github.com/1055373165/ggcache?tab=readme-ov-file)
 # 缓存
 支持 [[LRU]], [[LFU]], ARC, ==并发安全==
 ## LRU

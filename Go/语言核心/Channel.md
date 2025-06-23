@@ -31,7 +31,7 @@ hchan：channel 数据结构
   
 -  dataqsize: 当前 channel 能存放的元素容量；  
   
--  buf：channel 中用于存放元素的环形缓冲区；  
+-  ==buf：channel 中用于存放元素的环形缓冲区==；  
   
 -  elemsize：channel 元素类型的大小；  
   

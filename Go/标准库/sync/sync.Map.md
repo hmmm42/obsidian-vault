@@ -6,6 +6,7 @@
 golang 中，map 不是并发安全的结构，并发读写会引发严重的错误.  
   
 sync 标准包下的 sync.Map 能解决 map 并发读写的问题，本文通过手撕源码+梳理流程的方式，和大家一起讨论其底层实现原理，并进一步总结出 sync.Map 的特征和适用场景.  
+==适用于读多, 更新多, 写少, 删除少==
 # 2 核心数据结构  
 ## 2.1 sync.Map  
   
@@ -43,7 +44,7 @@ type entry struct {
     p unsafe.Pointer 
 }
 ```  
-  
+==对于相同的 key, read 和 dirty 指向的内容是一样的==
 kv 对中的 value，统一采用 unsafe.Pointer 的形式进行存储，通过 entry.p 的指针进行链接.  
   
 entry.p 的指向分为三种情况：  
@@ -149,7 +150,8 @@ func (m *Map) missLocked() {
   
 - • 倘若 miss 次数小于 dirty map 中存在的 key-entry 对数量，直接返回即可；  
   
-- • 倘若 miss 次数大于等于 dirty map 中存在的 key-entry 对数量，则使用 dirty map 覆盖 read map，并将 read map 的 amended flag 置为 false；  
+- • 倘若 miss 次数大于等于 dirty map 中存在的 key-entry 对数量，则==使用 dirty map 覆盖 read map==，并将 read map 的 amended flag 置为 false；  
+	- 这里的覆盖是浅拷贝, 所以 dirty 需要置 nil.
   
 - • 新的 dirty map 置为 nil，misses 计数器清零.  
   
@@ -159,15 +161,16 @@ func (m *Map) missLocked() {
   
 sync.Map 写流程  
 ## 4.1 sync.Map.Store()  
-```
+```go
 func (m *Map) Store(key, value any) {
     read, _ := m.read.Load().(readOnly)
     if e, ok := read.m[key]; ok && e.tryStore(&value) {
         return
     }
-
+ 
 
     m.mu.Lock()
+    // double check
     read, _ = m.read.Load().(readOnly)
     if e, ok := read.m[key]; ok {
         if e.unexpungeLocked() {
@@ -326,7 +329,7 @@ func (e *entry) tryExpungeLocked() (isExpunged bool) {
   
 - • 此时会遍历一轮 read map ，将未删除的 key-entry 对拷贝到 dirty map 当中；  
   
-- • 在遍历时，还会将 read map 中软删除 nil 态的 entry 更新为硬删除 expunged 态，因为在此流程中，不会将其拷贝到 dirty map.  
+- • 在遍历时，还会将 read map 中==软删除 nil 态的 entry 更新为硬删除 expunged 态==，因为在此流程中，不会将其拷贝到 dirty map.  
   
    
 # 5 删流程  
