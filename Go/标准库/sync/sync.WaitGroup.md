@@ -1,4 +1,3 @@
-#toread
 #  Go并发编程之sync.WaitGroup  
 原创 小徐先生1212  小徐先生的编程世界   2023-05-26 19:03  
   
@@ -547,7 +546,7 @@ func (wg *WaitGroup) Wait() {
             return
         }
         // wait 阻塞等待 waitGroup 的计数器加一，然后陷入阻塞
-        if atomic.CompareAndSwapUint64(statep, state, state+1)atomic.CompareAndSwapUint64(statep, state, state+1) {
+        if atomic.CompareAndSwapUint64(statep, state, state+1){
             // ...
             runtime_Semacquire(semap)
             // 从阻塞中回复，倘若前一轮 wait 操作还没结束，waitGroup 又被使用了，则会 panic
