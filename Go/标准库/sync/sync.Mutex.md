@@ -563,7 +563,7 @@ func (rw *RWMutex) rUnlockSlow(r int32) {
 ```  
 - • 对 RWMutex.readerCount 进行校验，倘若发现当前协程此前未抢占过读锁，或者介入读锁流程的 goroutine 数量达到上限，则抛出 fatal；  
   
-(倘若 r+1 == -rwmutexMaxReaders，说明此时有 goroutine 介入写锁流程，但当前此前未加过读锁，具体原因见 2.3 小节；倘若 r+1==0，则要么此前未加过读锁，要么介入读锁流程的 goroutine 数量达到上限，具体原因见 2.3 小节.)  
+(倘若 r+1 == -rwmutexMaxReaders，说明此时有 goroutine 介入写锁流程，但当前此前未加过读锁，具体原因见 2.3 小节；倘若 `r+1==0`，则要么此前未加过读锁，要么介入读锁流程的 goroutine 数量达到上限，具体原因见 2.3 小节.)  
 - • 基于原子操作，对 RWMutex.readerWait 进行减一操作，倘若其新值为 0，说明当前 goroutine 是最后一个介入读锁流程的协程，因此需要唤醒一个等待写锁的阻塞队列的 goroutine.（综合 RWMutex.readerCount 为负值，可以确定存在等待写锁的 goroutine，具体原因见 2.3 小节.）  
   
 ## 2.4 写锁流程  

@@ -13,3 +13,10 @@
 
 **Shell脚本**：
 - 如果您的项目中有 `.sh` 脚本，并且是在Windows环境下编辑保存为`\r\n`格式，那么当您尝试在Linux或macOS环境下执行它时，会因为多余的`\r`字符而报错，常见的错误是 `^M: command not found`。
+## 测试文件读取统计变量
+**测试代码和实际服务运行在不同的进程中**。
+当你运行测试时：
+1. 测试代码通过 HTTP 请求访问运行在 `localhost:14530` 的服务
+2. 服务代码在一个独立的进程中运行，有自己的 [requestCount](vscode-file://vscode-app/c:/Users/qiuji/AppData/Local/Programs/Microsoft%20VS%20Code/resources/app/out/vs/code/electron-sandbox/workbench/workbench.html) 变量
+3. 测试代码在另一个进程中运行，有自己的 [requestCount](vscode-file://vscode-app/c:/Users/qiuji/AppData/Local/Programs/Microsoft%20VS%20Code/resources/app/out/vs/code/electron-sandbox/workbench/workbench.html) 变量
+4. 两个进程之间的内存是隔离的，所以测试无法访问到服务进程中的

@@ -566,3 +566,70 @@ func WithValue(parent Context, key, val any) Context {
   
 - • 包括 parent context 以及 kv对，返回一个新的 valueCtx.  
   
+# 实例
+实现带有过期自动释放功能的单机锁
+- 过期自动释放
+- 解锁需要身份验证
+- 基于 context, goroutine
+## 方案I: 懒释放
+![image.png](https://raw.githubusercontent.com/hmmm42/Picbed/main/obsidian/pictures20250625133943645.png)
+## 方案II: 异步释放
+```go
+type ExpiredLock struct {
+	mutex        sync.Mutex
+	processMutex sync.Mutex
+	owner        string
+	stop         context.CancelFunc
+}
+
+func (e *ExpiredLock) Lock(expireAfter time.Duration) {
+	e.processMutex.Lock()
+	defer e.processMutex.Unlock()
+	
+	e.mutex.Lock()
+	token := getCurrentOwner()
+	e.owner = token
+	
+	if expireAfter <= 0 {
+		return
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), expireAfter)
+	e.stop = cancel
+	
+	go func() {
+		select {
+		case <-time.After(expireAfter):
+			err := e.unLock(token)
+			if err != nil {
+				panic(err)
+			}
+		case <-ctx.Done():
+		}
+	}()
+}
+
+func (e *ExpiredLock) Unlock() error {
+	token := getCurrentOwner()
+	return e.unLock(token)
+}
+
+func (e *ExpiredLock) unLock(token string) error {
+	e.processMutex.Lock()
+	defer e.processMutex.Unlock()
+	
+	if token != e.owner {
+		return fmt.Errorf("cannot unlock: current owner %s does not match lock owner %s", getCurrentOwner(), e.owner)
+	}
+	
+	e.owner = ""
+	
+	if e.stop != nil {
+		e.stop()
+	}
+	
+	e.mutex.Unlock()
+	return nil
+}
+
+```
