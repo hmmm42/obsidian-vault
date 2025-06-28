@@ -78,10 +78,10 @@ gmp = goroutine + machine + processor. 下面我们对这三个核心组件展�
   
 3） p  
 - p 即 processor，是 golang 中的调度器；  
+	- ==m 与 p 一一对应==
+- p 可以理解为 m 的**执行代理**，m 需要与 p 绑定后，才会进入到 gmp 调度模式当中；因此 p 的数量决定了 g 最大并行数量（可由用户通过 GOMAXPROCS 进行设定，在超过 CPU 核数时无意义）  
   
-- p 可以理解为 m 的执行代理，m 需要与 p 绑定后，才会进入到 gmp 调度模式当中；因此 p 的数量决定了 g 最大并行数量（可由用户通过 GOMAXPROCS 进行设定，在超过 CPU 核数时无意义）  
-  
-- p 是 g 的存储容器，其自带一个本地 g 队列（local run queue，简称 lrq），承载着一系列等待被调度的 g  
+- p 是 **g 的存储容器**，其自带一个本地 g 队列（local run queue，简称 lrq），承载着一系列等待被调度的 g  
   
 > 当我们把 gmp 理解为一个任务调度系统，那么 p 就是这个系统中的”中枢“，当其和作为”引擎“ 的 m 结合后，才会引导“引擎”进入 gmp 的运行模式；同时 p 也是这个系统中存储“任务”的“容器”，为“引擎”提供了用于执行的任务资源.  
   
@@ -96,7 +96,7 @@ gmp = goroutine + machine + processor. 下面我们对这三个核心组件展�
 -  全局队列 grq（global run queue）：是全局调度模块 schedt 中的全局共享 g 队列，作为当某个 lrq 不满足条件时的备用容器，因为不同的 m 都可能访问 grq，因此并发竞争比较激烈，访问前需要加全局锁  
   
 介绍完了 g 的存储容器设计后，接下来聊聊将 g 放入容器和取出容器的流程设计：  
-- put g：当某个 g 中通过 go func(){...} 操作创建子 g 时，会先尝试将子 g 添加到当前所在 p 的 lrq 中（无锁化）；如果 lrq 满了，则会将 g 追加到 grq 中（全局锁）. 此处采取的思路是“就近原则”  
+- put g：当某个 g 中通过 go func(){...} 操作创建子 g 时，会先尝试将**子 g 添加到当前所在 p 的 lrq 中**（无锁化）；如果 lrq 满了，则会将 g 追加到 grq 中（全局锁）. 此处采取的思路是“就近原则”  
   
 - get g：gmp 调度流程中，m 和 p 结合后，运行的 g0 会不断寻找合适的 g 用于执行，此时会采取“负载均衡”的思路，遵循如下实施步骤：  
   
@@ -114,7 +114,7 @@ gmp = goroutine + machine + processor. 下面我们对这三个核心组件展�
   
 在 golang 中已经完全屏蔽了线程的概念，将 goroutine 统一为整个语言层面的并发粒度，并遵循着 gmp 的秩序进行运作. 如果把 golang 程序比做一个人的话，那么 gmp 就是这个人的骨架，支持着他的直立与行走；而在此基础之上，紧密围绕着 gmp 理念打造设计的一系列工具、模块则像是在骨架之上填充的血肉，是依附于这套框架而存在的. 下面我们来看其中几个经典的案例：  
   
-（1）内存管理  
+#### （1）内存管理  
   
 ![](https://mmbiz.qpic.cn/sz_mmbiz_png/3ic3aBqT2ibZsGic2GyS4XfkqBhsXCru0ibR1OzVKr6SSdENnecCKiby1j3U13g162iar2ma4oZUJ1IvOowlEu7UCXMg/640?wx_fmt=png&from=appmsg "")  
   
@@ -125,11 +125,11 @@ golang 的内存管理模块主要继承自 TCMalloc（Thread-Caching-Malloc）�
   
   
   
-（2）并发工具  
+#### （2）并发工具  
   
 ![](https://mmbiz.qpic.cn/sz_mmbiz_png/3ic3aBqT2ibZsGic2GyS4XfkqBhsXCru0ibR0R7cZ8C1icvBXS2ib1BQOgJCVmmbFoGBWNCARNz2AJR2O71VaZ80N30g/640?wx_fmt=png&from=appmsg "")  
   
-在 golang 中的并发工具（例如锁 mutex、通道 channel 等）均契合 gmp 作了适配改造，保证在执行阻塞操作时，会将阻塞粒度限制在 g（goroutine）而非 m（thread）的粒度，使得阻塞与唤醒操作都属于用户态行为，无需内核的介入，同时一个 g 的阻塞也完全不会影响 m 下其他 g 的运行.  
+在 golang 中的并发工具（例如锁 mutex、通道 channel 等）均契合 gmp 作了适配改造，保证在执行阻塞操作时，会将阻塞粒度限制在 g（goroutine）而非 m（thread）的粒度，使得阻塞与唤醒操作都属于用户态行为，**无需内核的介入**，同时一个 g 的阻塞也完全不会影响 m 下其他 g 的运行.  
 > 有关 mutex 和 channel 底层实现机制，可以阅读我此前发表的文章：1）[Golang 单机锁实现原理](http://mp.weixin.qq.com/s?__biz=MzkxMjQzMjA0OQ==&mid=2247483797&idx=1&sn=34274d44bced0835ea302376a137219b&chksm=c10c4f4bf67bc65d88b09b356abcc1ba8767a1ae1dbecae5014eeb791b016a8c66d95f75042d&scene=21#wechat_redirect)  
 ；2）[Golang channel 实现原理](http://mp.weixin.qq.com/s?__biz=MzkxMjQzMjA0OQ==&mid=2247483770&idx=1&sn=fa999e22d5de4624544488562d6f799d&chksm=c10c4fa4f67bc6b2f381ea7669dfd3322a3ced0ce0836f528185cf85f52d8414659afda0557f&scene=21#wechat_redirect)  
 .  
@@ -140,7 +140,7 @@ golang 的内存管理模块主要继承自 TCMalloc（Thread-Caching-Malloc）�
 > 这一点如果要解决，就需要针对所有并发工具做一层适配于协程粒度的改造，实现成本无疑是巨大的. 这也从侧面印证了 golang 的并发优越性，这种适配性在语言层面就已经天然支持了.  
   
   
-（3）io 多路复用  
+#### （3）io 多路复用  
   
 ![](https://mmbiz.qpic.cn/sz_mmbiz_png/3ic3aBqT2ibZsGic2GyS4XfkqBhsXCru0ibR12tG66B57sMhukeatQmu2SH3p6svnPFWMSiadKrwMv8wia6keB43582g/640?wx_fmt=png&from=appmsg "")  
   
@@ -166,7 +166,7 @@ g （goroutine）的类型声明如下，其中包含如下核心成员字段：
   
 - defer：g 运行函数中创建的 defer 操作（以 LIFO 次序组织）  
   
-- m：正在执行 g 的 m（若 g 不为 running 状态，则此字段为空）  
+- m：正在执行 g 的 m **（若 g 不为 running 状态，则此字段为空）**  
   
 - atomicstatus：g 的生命周期状态（具体流转规则参见上图）  
   
@@ -190,8 +190,26 @@ type g struct{
     // g 从属的 m
     m         *m      
     // ...  
-    /*        g 的状态        // g 实例刚被分配还未完成初始化        _Gidle = iota // 0        // g 处于就绪态.  可以被调度         _Grunnable // 1        // g 正在被调度运行过程中        _Grunning // 2        // g 正在执行系统调用        _Gsyscall // 3        // g 处于阻塞态，需要等待其他外部条件达成后，才能重新恢复成就绪态        _Gwaiting // 4        // 生死本是一个轮回. 当 g 调度结束生命终结，或者刚被初始化准备迎接新生前，都会处于此状态        _Gdead // 6    */
+    
+    /*        
+    g 的状态        
+    
+    // g 实例刚被分配还未完成初始化       
+    _Gidle = iota // 0       
+    // g 处于就绪态.  可以被调度      
+    _Grunnable // 1      
+    // g 正在被调度运行过程中      
+    _Grunning // 2       
+    // g 正在执行系统调用     
+    _Gsyscall // 3       
+    // g 处于阻塞态，需要等待其他外部条件达成后，才重新恢复成就绪态       
+    _Gwaiting // 4       
+    // 生死本是一个轮回. 当 g 调度结束生命终结，或刚被初始化准备迎接新生前，都会处于此状态
+    _Gdead // 6    
+    */
+    
     atomicstatus uint32
+    
     // ...
     // 进入全局队列 grq 时指向相邻 g 的 next 指针
     schedlink    guintptr
@@ -205,9 +223,9 @@ type g struct{
 m（machine）是 go 对 thread 的抽象，其类定义代码中包含如下核心成员：  
 - g0：执行调度流程的特殊 g（不由用户创建，是与 m 一对一伴生的特殊 g，为 m 寻找合适的普通 g 用于执行）  
   
-- gsignal：执行信号处理的特殊 g（不由用户创建，是与 m 一对一伴生的特殊 g，处理分配给 m 的 signal）  
+- gsignal：执行信号处理的特殊 g（不由用户创建，是与 m 一对一伴生的特殊 g，处理分配给 m 的 signal）
   
-- curg：m 上正在执行的普通 g（由用户通过 go func(){...} 操作创建）  
+- curg：m 上正在执行的普通 g（由用户通过 `go func(){...}` 操作创建）  
   
 - p：当前与 m 结合的 p  
   
@@ -242,7 +260,7 @@ p （processor）是 gmp 中的调度器，其类定义代码中包含如下核�
   
 - m：当前与 p 结合的 m  
   
-- runq：p 私有的 g 队列——local run queue，简称 lrq  
+- runq：p 私有的 g 队列——==local run queue，简称 lrq== 
   
 - runqhead：lrq 中队首节点的索引  
   
@@ -253,13 +271,21 @@ p （processor）是 gmp 中的调度器，其类定义代码中包含如下核�
 ```go
 type p struct{
     id          int32
+    
     /*       
-     p 的状态        // p 因缺少 g 而进入空闲模式，此时会被添加到全局的 idle p 队列中   
-    _Pidle = iota // 0        // p 正在运行中，被 m 所持有，可能在运行普通 g，也可能在运行 g0
-    _Prunning // 1        // p 所关联的 m 正在执行系统调用. 此时 p 可能被窃取并与其他 m 关联       
-     _Psyscall // 2        // p 已被终止       
-     _Pdead // 4    */
+    p 的状态        
+    
+    // p 因缺少 g 而进入空闲模式，此时会被添加到全局的 idle p 队列中   
+    _Pidle = iota // 0    
+    // p 正在运行中，被 m 所持有，可能在运行普通 g，也可能在运行 g0
+    _Prunning // 1      
+    // p 所关联的 m 正在执行系统调用. 此时 p 可能被窃取并与其他 m 关联       
+    _Psyscall // 2        
+    // p 已被终止       
+    _Pdead // 4    
+    */
     status      uint32   // one of pidle/prunning/...
+    
     // 进入 schedt pidle 链表时指向相邻 p 的 next 指针
     link        puintptr        
     // ...
@@ -325,7 +351,7 @@ type schedt struct{
   
 1）main 函数  
   
-main 函数作为整个 go 程序的入口是比较特殊的存在，它是由 go 程序全局唯一的 m0（main thread）执行的，对应源码位于 runtime.proc.go：  
+main 函数作为整个 go 程序的入口是比较特殊的存在，它是由 go 程序全局唯一的 ==m0（main thread）==执行的，对应源码位于 runtime.proc.go：  
 ```
 //go:linkname main_main main.main
 func main_main()
@@ -361,7 +387,7 @@ func handle() {
 -  如果 lrq 满了，则加锁并添加到全局队列 grq 中.  
   
 上述流程对应代码为 runtime/proc.go 的 newproc 方法中：  
-```
+```go
 // 创建一个新的 g，本将其投递入队列. 入参 fn 为用户指定的函数.
 // 当前执行方还是某个普通 g
 func newproc(fn *funcval){
@@ -375,7 +401,11 @@ func newproc(fn *funcval){
         newg := newproc1(fn, gp, pc)
         // 获取当前 p 
         _p_ := getg().m.p.ptr()
-        /*            将 newg 添加到队列中：            1）优先添加到 p 的本地队列 lrq             2）若 lrq 满了，则添加到全局队列 grq        */
+        /*            
+	        将 newg 添加到队列中：            
+	        1）优先添加到 p 的本地队列 lrq             
+	        2）若 lrq 满了，则添加到全局队列 grq        
+        */
         runqput(_p_, newg,true)
         // 如果存在因过度空闲而被 block 的 p 和 m，则需要对其进行唤醒
         if mainStarted {
@@ -388,7 +418,7 @@ func newproc(fn *funcval){
 ```  
   
 其中，将 g 添加到就绪队列的方法为 runqput，展示如下：  
-```
+```go
 // 尝试将 g 添加到指定 p 的 lrq 中. 若 lrq 满了，则将 g 添加到 grqrq 中
 func runqput(_p_ *p, gp *g, next bool){
     // ...
@@ -414,7 +444,7 @@ retry:
     // 获取 lrq 尾节点的索引
     t := _p_.runqtail
     // 如果 lrq 没有满，则将 g 追加到尾节点的位置，并且递增尾节点的索引
-    if t-h <uint32(len(_p_.runq)){
+    if t-h < uint32(len(_p_.runq)){
         _p_.runq[t%uint32(len(_p_.runq))].set(gp)
         atomic.StoreRel(&_p_.runqtail, t+1)// store-release, makes the item available for consumption
         return

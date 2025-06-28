@@ -1,7 +1,7 @@
 - [Go语言实现黑马点评项目_黑马点评go-CSDN博客](https://blog.csdn.net/m0_57408211/article/details/137934662)
 - [lhpqaq/xzdp-go: golang 版本小众点评（黑马点评） 后端](https://github.com/lhpqaq/xzdp-go/tree/master)
 
-踩坑：
+# 踩坑
 ## viper 读取环境变量
 好像无法直接将环境变量Unmarshal到结构体中, 需要手动viper.Get(...)
 ## 日志无法输出
