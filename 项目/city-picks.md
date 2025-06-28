@@ -20,3 +20,12 @@
 2. 服务代码在一个独立的进程中运行，有自己的 [requestCount](vscode-file://vscode-app/c:/Users/qiuji/AppData/Local/Programs/Microsoft%20VS%20Code/resources/app/out/vs/code/electron-sandbox/workbench/workbench.html) 变量
 3. 测试代码在另一个进程中运行，有自己的 [requestCount](vscode-file://vscode-app/c:/Users/qiuji/AppData/Local/Programs/Microsoft%20VS%20Code/resources/app/out/vs/code/electron-sandbox/workbench/workbench.html) 变量
 4. 两个进程之间的内存是隔离的，所以测试无法访问到服务进程中的
+
+
+# 架构演进
+扁平化架构 -> 三层架构
+引入 wire 依赖注入
+
+- **v0.5 (纯数据库)**：解决了基本功能，但有并发安全和性能问题。
+- **v0.6 (分布式锁)**：解决了**并发安全**问题，但暴露了**性能**瓶颈。
+- **v0.7 (Lua+消息队列)**：通过异步化和内存计算，同时解决了**并发安全**和**性能**问题，达到了生产级秒杀系统的架构水平。
