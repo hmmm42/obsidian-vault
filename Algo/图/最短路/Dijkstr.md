@@ -48,3 +48,58 @@ func networkDelayTime(times [][]int, n int, k int) int {
 }
 
 ```
+
+ACM ver.
+```go
+func main() {
+  n, m := 0, 0
+  fmt.Scan(&n, &m)
+  graph := make([][][2]int, 5001)
+  for i := 0; i < m; i++ {
+    var u, v, w int
+    fmt.Scan(&u, &v, &w)
+    graph[u] = append(graph[u], [2]int{v, w})
+    graph[v] = append(graph[v], [2]int{u, w})
+  }
+  dis := make([]int, 5001)
+  for i := range dis {
+    dis[i] = math.MaxInt
+  }
+  dis[1] = 0
+
+  var pq PQ
+  heap.Push(&pq, [2]int{1, 0})
+  for len(pq) > 0 {
+    cur := heap.Pop(&pq).([2]int)
+    u := cur[0]
+    if cur[1] > dis[u] {
+      continue
+    }
+    for _, nxt := range graph[u] {
+      v, w := nxt[0], nxt[1]
+      if dis[v] > dis[u] + w {
+        dis[v] = dis[u] + w
+        heap.Push(&pq, [2]int{v, dis[v]})
+      }
+    }
+  }
+  if dis[n] == math.MaxInt {
+    fmt.Print(-1)
+  } else {
+    fmt.Print(dis[n])
+  }
+}
+
+type PQ [][2]int // {id, dis}
+
+func (pq PQ) Len() int           { return len(pq) }
+func (pq PQ) Less(i, j int) bool { return pq[i][1] < pq[j][1] } // 小根堆
+func (pq PQ) Swap(i, j int)      { pq[i], pq[j] = pq[j], pq[i] }
+func (pq *PQ) Push(x any)        { *pq = append(*pq, x.([2]int)) }
+func (pq *PQ) Pop() any {
+	x := (*pq)[len(*pq)-1]
+	*pq = (*pq)[:len(*pq)-1]
+	return x
+}
+
+```
