@@ -1,5 +1,7 @@
 ==单源最短路径, 不能处理负权重边==
 是[[BFS模板|BFS]]的扩展
+- ! 如果权重都是1, 直接用标准 BFS 
+
 使用的前提: 路径中每增加一条边，路径的总权重就会增加/减少
 面试时[[优先队列]]用标准库实现
 复杂度$O(|V|+|E|)$
@@ -50,6 +52,7 @@ func networkDelayTime(times [][]int, n int, k int) int {
 ```
 
 ACM ver.
+[【模板】单源最短路2_牛客题霸_牛客网](https://www.nowcoder.com/practice/7c1740c3d4ba4b3486df4847ee6e8fc7?tpId=308&tqId=2031489&sourceUrl=%2Fexam%2Foj%3Fpage%3D1%26tab%3D%25E7%25AE%2597%25E6%25B3%2595%25E7%25AF%2587%26topicId%3D295)
 ```go
 func main() {
   n, m := 0, 0
