@@ -247,7 +247,7 @@ func main() {
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZt1icygiaKIQr9qR0s2ZdyJKBKpfQQUPMPJKiavU72CI1gEjAnVIMTPWG2icqXDBqbtccqSkP5ey35c3g/640?wx_fmt=png "")  
   
    
-## 2.4 注册节点  
+## 2.4 注册节点 内部源码
   
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZt1icygiaKIQr9qR0s2ZdyJKBPz7d5tdHNnafDPWNY87q9vibe2tQYzSpfR64QmBGMfTLSP59pc9ff7w/640?wx_fmt=png "")  
   
