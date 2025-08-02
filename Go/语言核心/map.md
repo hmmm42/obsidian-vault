@@ -2304,3 +2304,186 @@ func advanceEvacuationMark(h *hmap, t *maptype, newbit uintptr) {
 ```  
   
 # 10 Go 1.24+ Swiss Table
+  
+![](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwILd96yvZ6h8Sf6TbiaAdCXibt9AeohIDtpHPATGV9LobdDYGjLTgajcw/640?wx_fmt=jpeg "")  
+在本文中，我们将探讨Go语言新的Swiss Tables实现如何帮助减少大型内存映射的内存使用，展示我们如何分析和衡量这一变化，并分享结构体层面的优化，这些优化带来了更大的全舰队范围节省。  
+为了更好地理解在高流量环境下内存使用量下降的原因，我们开始查看给定服务的实时堆。更仔细地比较了前后，我们发现：  
+![我们在一张名为 shardRoutingCache 的映射上节省了大约 500 MiB 的实时堆使用量，该映射位于 ShardRouter 包中。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwbSXuOM0FsBzu7yJxibfJRibGLMKKBl5OvXcC7GaT3c2hE7YYIlt00CsA/640?from=appmsg "")  
+我们在一张名为shardRoutingCache的映射上节省了大约**500 MiB**的实时堆使用量，该映射位于ShardRouter包中。如果考虑到默认设置为100的Go垃圾回收器（GOGC），这将使内存使用量减少**1 GiB（即500 x 2）**。  
+当我们计入第一部分中描述的mallocgc问题导致的约400 MiB RSS增长时，我们仍然看到**净减少600 MiB的内存使用量**！  
+这究竟是为什么呢？首先，让我们深入了解shardRoutingCache映射及其填充方式。  
+我们的一些Go数据处理服务使用ShardRouter包。顾名思义，该包根据路由键确定传入数据的目标分片。这是通过在启动时查询数据库，并使用响应来填充shardRoutingCache映射来实现的。  
+该映射的布局如下：  
+### 估算每个条目的内存占用  
+为了更好地估算内存减少量，我们来计算每个键值对的大小。在64位架构上，键的大小为**16字节**（字符串头大小）。每个值的大小将对应：  
+- shardID int32 占 **4字节**  
+- shardType int 占 **8字节**  
+- routingKey string 头信息占 **16字节**  
+- lastModifiedTimestamp 指针占 **8字节**  
+我们稍后会讨论routingKey字符串本身的长度以及lastModifiedTimestamp指向的time.Time结构体的大小（暂不剧透！）。目前，我们假设**字符串为空，指针为nil**。  
+这意味着每个值分配了：(4+8+16+8) = **36字节**，加上填充[1]后为**40字节**。总的来说，每个键值对需要**56字节**。  
+大多数分配发生在服务启动时查询数据库期间。这意味着，在服务生命周期内，此映射很少插入新数据。稍后我们将看到这如何影响映射的大小。  
+现在，让我们回顾一下Go 1.23与Go 1.24中映射的工作方式，以及这如何影响shardRoutingCache映射的大小。  
+## Go 1.23 基于桶的 Map 实现解析  
+### 桶结构与布局  
+Go 1.23 中 Map 的运行时实现基于哈希表，并以桶数组的形式组织。在 Go 的实现中，**桶的数量始终是 2 的幂**（2n），每个桶包含 **8 个槽位**用于存储 Map 的键值对。我们通过一个包含 **2 个桶的 Map** 示例来直观了解：  
+![每个桶包含八个槽位，用于存储 Map 的键值对。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwlzfbajzw4JYojvwoa71g9PA6ib5S5KiaC2icLhffXwsyv4I1Ugvic3R3gA/640?from=appmsg "")  
+插入新的键值对时，元素放置的桶由哈希函数 hash(key) 确定。然后，需要扫描桶中所有现有元素，以判断键是否与 Map 中现有键匹配：  
+- **如果匹配**，则更新该键值对。  
+- **否则**，将元素插入第一个空槽位。  
+![插入新的键值对时，元素放置的桶由哈希函数 hash(key) 确定。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwkzmS6ic6ptIjDrPX2CBpxrW8H4kSIxGcr66Pic40AQYZlOMDljBqkVJA/640?from=appmsg "")  
+类似地，从 Map 读取元素时，也必须扫描桶中所有现有元素。这种对桶中所有元素的读写扫描操作通常是 Map 操作 CPU 开销的重要组成部分。  
+当一个桶已满——但其他桶仍有大量空间时——新的键值对会被添加到与原始桶链接的溢出桶中。在每次读/写操作时，也会扫描溢出桶，以确定是插入新元素还是更新现有元素：  
+![每次写入时，也会扫描溢出桶，以确定是插入新元素还是更新现有元素。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwYABy6SWuaB1RVmFzibuNpzibaSibpwuiaicR7q6mkgbU87tt3vS0xk0CfzA/640?from=appmsg "")  
+当一个溢出桶已满——但其他桶仍有大量空间时——可以添加一个新的溢出桶并与前一个溢出桶链接，以此类推。  
+### Map 扩容与负载因子  
+最后，我们讨论 Map 的扩容及其对桶数量的影响。初始桶的数量由 Map 的初始化方式决定：  
+对于每个桶，**负载因子**是桶中元素数量与桶大小之比。在上面的示例中，桶 0 的负载因子为 **8/8**，桶 1 的负载因子为 **1/8**。  
+随着 Map 的增长，Go 会跟踪所有非溢出桶的**平均负载因子**。当平均负载因子严格高于 **13/16 (或 6.5/8)** 时，我们需要将 Map 重新分配到一个桶数量翻倍的新 Map。通常，下一次插入会创建一个新的桶数组——大小是原来的两倍——理论上，也应该将旧桶数组的内容复制到新数组。  
+由于 Go 经常用于对延迟敏感的服务器，我们不希望内置操作对延迟造成任意大的影响。因此，Go 在 1.23 之前不会在单次插入时复制整个底层 Map 到新 Map，而是会同时保留两个数组：  
+![Go 在 1.23 之前不会在单次插入时复制整个底层 Map 到新 Map，而是会同时保留两个 Map。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwqxicUkcPOd3icrUR7HnhRx0SzQWkplRfiahTGZ9ialyCtC48GzS2mb1zEA/640?from=appmsg "")  
+每次对 Map 进行新的写入时，Go 会增量地将项目从旧桶移动到新桶：  
+![高负载因子意味着平均每个桶将包含更多的键值对。图示为两个旧桶和四个新桶。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwibmlicEXpAibDLlyPCFoHwfAbvsYj3uOITxzjRI90HQp0oPVtw5aR8tUQ/640?from=appmsg "")  
+**关于负载因子**: 高负载因子意味着平均每个桶将包含更多的键值对。因此，插入元素时，我们需要扫描每个桶中更多的键，以判断是更新现有元素还是将元素插入空槽位。读取值时也同样适用。另一方面，低负载因子意味着大部分桶处于空闲状态，导致内存浪费。  
+### 估算map内存占用  
+现在我们已掌握估算Go 1.23中shardRoutingCache map大小所需的大部分信息。我们有一个自定义指标，显示map中存储的元素数量：  
+![map中的元素数量：3500000。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwBicmvXbSSb332libsul9AZnBeEpk6ibqjZ74hSSVcWsFFfmUxCRlR03Dg/640?from=appmsg "")  
+对于约3,500,000个元素，最大平均负载因子为**13/16**，我们至少需要：  
+- **所需桶数** = 3,500,000 / (8 x 13/16) ≈ **538,462个桶**  
+- 大于538,462的最小2次幂是2^20 = **1,048,576个桶**  
+然而，由于538,462接近524,288 (2^19)，且shardRoutingCache map写入频率较低，**旧的桶很可能仍处于已分配状态**——我们仍处于从旧map向新大map过渡的阶段。  
+这意味着shardRoutingCache分配了2^20（新桶）+ 2^19（旧桶），即**1,572,864个桶**。  
+每个桶结构包含：  
+- 一个**溢出桶指针**（64位架构上为8字节）  
+- 一个**8字节数组**（内部使用）  
+- **8个键值对**，每个56字节：56 × 8 = **448字节**  
+这意味着**每个桶占用464字节**内存。  
+因此，对于Go 1.23，桶数组占用的总内存为：  
+- **1,572,864个桶** × **464字节/桶** = 729,808,896字节 ≈ **696 MiB**。  
+但这仅是主桶数组的内存占用。我们还需要考虑**溢出桶**。对于分布良好的哈希函数，溢出桶的数量应该相对较少。  
+Go map实现会根据桶的数量预分配溢出桶 (2^n-4个溢出桶)。对于2^20个桶，这意味着大约**2^16 = 65,536个溢出桶**可能被预分配，额外增加**65,536个溢出桶** × **464字节/桶**——总计约**30.4 MiB**。  
+总的来说，map的估计总内存占用为：  
+- **主桶数组（包括旧桶）≈ 696 MiB**  
+- **预分配溢出桶 ≈ 30.4 MiB**  
+- **总计 ≈ 726.4 MiB**  
+这与实时堆剖析中的观察结果相符，即Go 1.23中shardRoutingCache map的实时堆使用量约为**930 MiB**：其中**730 MiB**用于map本身，**200 MiB**用于为路由键分配底层字符串。  
+## Swiss Tables与可扩展哈希的变革  
+Go 1.24引入了基于Swiss Tables[2]和可扩展哈希[3]的全新map实现。在Swiss Tables中，数据以组的形式存储：每组包含**8个槽位**用于存储键值对，以及一个**64位控制字**（8字节）。Swiss Table中的组数量始终是2的幂。  
+我们来看一个包含两个组的表的例子：  
+![Number of groups in a Swiss Table is always a power of 2.](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwY0d50gOl8LDCgX2bxqaI2zVSkobq63CibuiaMiagYN7RKImKpb7FDfVag/640?from=appmsg "")  
+控制字中的每个字节都与一个槽位关联。第一个位指示该槽位是**空闲**、**已删除**还是**使用中**。如果槽位在使用中，剩余的7位存储键哈希的低位。  
+### Swiss Tables插入操作  
+我们来看看如何将一个新的键值对插入到这个2组Swiss Table中。首先，计算键k1的64位哈希hash(k1)，并将其分成两部分：前57位称为h1，后7位称为h2。  
+通过计算h1 mod 2（因为有2个组）来确定使用哪个组。如果h1 mod 2 == 0，我们将尝试把键值对存储在组0中：  
+![If h1 mod 2 == 0, we’ll try to store the key–value pair in group 0.](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwKbFkMZtMt5kekxG6CNPYuOFGLRKlbYoZeHvQdCdkkBdOyMH8yuFgrQ/640?from=appmsg "")  
+在存储该键值对之前，我们检查组0中是否已存在具有相同键的键值对。如果存在，我们需要更新现有键值对；否则，将新元素插入到第一个空闲槽位中。  
+这正是Swiss Tables的亮点：以前，要完成这项操作，我们必须线性探测桶中的所有键值对。  
+在Swiss Tables中，**控制字让我们能更高效地完成此操作**。由于每个字节都包含该槽位哈希的低7位（h2），我们可以首先将要插入的键值对的h2与控制字每个字节的低7位进行比较。  
+此操作受**单指令多数据** (SIMD)[4]硬件支持，其中该比较通过**单个CPU指令**在组中所有8个槽位上并行完成。当没有专门的SIMD硬件时，这通过标准的**算术和位操作**实现。  
+**注意**：截至Go 1.24.2，arm64架构尚不支持基于SIMD的map操作。您可以关注（并点赞）跟踪非amd64架构实现进度的GitHub issue[5]。  
+### 处理满载组  
+当组中所有槽位都已满时会发生什么？此前，在Go 1.23中，我们不得不创建**溢出桶**。使用Swiss Tables，我们将键值对存储在下一个有可用槽位的组中。由于探测速度很快，运行时可以检查额外的组以确定元素是否已存在。探测序列在到达第一个**空闲（非已删除）**槽位的组时停止：  
+![Inserting k9, v9 into the Swiss Table.](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwery4kHxBRAAwIhX4FhxtoG6Fc4icMVXk1RkyCFYHcv0iaEC8xZCSzQ8A/640?from=appmsg "")  
+因此，这种快速探测技术使我们能够消除**溢出桶**的概念。  
+### 分组负载因子与映射增长  
+现在我们来看看Swiss Tables中映射增长的工作原理。与之前一样，每个分组的**负载因子**定义为分组中的元素数量除以其容量。在上述示例中，分组0的负载因子为**8/8**，分组1的负载因子为**2/8**。  
+由于控制字使得探测速度大大加快，Swiss Tables默认使用**更高的最大负载因子（7/8）**，这会减少内存使用。  
+当平均负载因子严格高于7/8时，我们需要将映射重新分配到一个桶数量翻倍的新映射。通常，下一次插入操作将导致表格分裂。  
+但是，对于Go 1.23实现中提到的，如何限制对延迟敏感服务器的尾部延迟呢？如果映射包含数千个分组，单次插入操作将承担移动和重新哈希所有现有元素的开销，这可能耗费大量时间：  
+![当插入(k,v)时，负载因子严格高于7/8时，表格分裂操作的示意图。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwAqLYWiaCdwHxVlib0UcmzKt7V5yePmIgzIM4kVHlz2bz4Ugiap9S3GI0A/640?from=appmsg "")  
+Go 1.24通过限制单个Swiss Table中可以存储的分组数量来解决这个问题。单个表格最多可以存储**128个分组（1024个槽位）**。  
+如果我们想存储超过1024个元素怎么办？这就是**可扩展哈希**发挥作用的地方。  
+映射不再由**单个Swiss Table**实现，而是由**一个或多个独立Swiss Tables的目录**组成。使用**可扩展哈希**，密钥哈希中可变数量的高位用于确定密钥属于哪个表格：  
+![每个映射是一个或多个独立Swiss Tables的目录。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxw3rHasCIGPklHWgiapy8700TZKibu4IiafX4jFYZvr1vyY0qDXt892DGFQ/640?from=appmsg "")  
+可扩展哈希实现了两件事：  
+- **有界分组复制**：通过限制单个Swiss Table的大小，添加新分组时需要复制的元素数量受到限制。  
+- **独立表格分裂**：当一个表格达到128个分组时，它会分裂成两个128个分组的Swiss Table。这是最昂贵的操作，但它是受限的，并且每个表格独立进行。  
+因此，对于非常大的表格，**Go 1.24的表格分裂方法**比Go 1.23的**内存效率更高**，因为Go 1.23在增量迁移期间会将旧桶保留在内存中。  
+回顾与Go 1.23相比的内存节省：  
+- **更高负载因子**：Swiss Tables支持更高的负载因子**87.5%**（Go 1.23为81.25%），所需总槽位更少。  
+- **消除溢出桶**：Swiss Table消除了对溢出存储的需求。它们还消除了溢出桶指针，抵消了控制字的额外占用空间。  
+- **更高效的增长**：与Go 1.23在增量迁移期间将旧桶保留在内存中不同，Go 1.24的表格分裂方法内存效率更高。  
+### 估算映射内存使用量  
+现在，我们将所学知识应用于估算Go 1.24上shardRoutingCache映射的大小。  
+对于**3,500,000个元素**，最大平均负载因子为**7/8**，我们至少需要：  
+- **所需分组数** = 3,500,000 / (8 x 7/8) ≈ **500,000个分组**  
+- **所需表格数** = 500,000（分组）/ 128（每表格分组数）≈ **3900个表格**  
+由于表格独立增长，一个目录可以包含任意数量的表格，而不仅仅是2的幂次方。  
+每个表格存储**128个分组**。每个分组有：  
+- 一个**控制字：8字节**  
+- **8对键值对，每对56字节**：56 × 8 = **448字节**  
+这意味着每个表格使用**(448 + 8)字节/分组 x 128分组 ≈ 58,368字节**。  
+因此，对于**Go 1.24**，Swiss Tables使用的总内存为：**3,900个表格 × 58,368字节/表格 = 227,635,200字节 ≈ 217 MiB**。（在**Go 1.23**中，映射的大小约为**726.4 MiB**。）  
+这与我们之前在实时堆剖析中观察到的结果一致：切换到**Go 1.24**为shardRoutingCache映射节省了大约**500 MiB的实时堆使用量**——或在考虑GOGC[6]时大约**1GiB的RSS**。  
+## 低流量环境下未见同等收益的原因  
+首先，我们来看低流量环境下映射中的元素数量：  
+![低流量环境下映射中的元素数量：550000。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwECNrdTS94wJcspFrm3rSsibYiaU2o9EdyU4XZyRrHhYBfAfdZHg6HKlw/640?from=appmsg "")  
+考虑到这一点，我们应用相同的公式。  
+### Go 1.23 中基于桶的哈希表  
+对于 **550,000 个元素**，最大平均负载因子为 **13/16**，我们至少需要：  
+- **所需桶数** = 550,000 / (8 x 13/16) ≈ **84,615 个桶**  
+- 大于 84,615 的最小 2 的幂是 2^17 = **131,072 个桶**  
+由于 84,615 远大于 2^16 (**65,536**)，我们可以预期最近一次扩容后的旧桶将被释放。  
+这也对应着 2^13 **预分配的溢出桶**，所以桶的总数是：  
+- **2^18 + 2^14 = 139,264 个桶**  
+因此，对于 Go 1.23，桶数组占用的总内存为：  
+- **139,264 个桶 × 464 字节/桶 = 64,618,496 字节 ≈ 62 MiB**  
+### Go 1.24 中使用 Swiss Tables  
+对于相同的 **550,000 个元素**，最大平均负载因子为 **7/8**，我们需要：  
+- **所需组数** = 550,000 / (8 × 7/8) ≈ **78,571 组**  
+- **所需表数** = 78,571 (组) / 128 (组/表) ≈ **614 张表**  
+每张表使用：  
+- **(448 + 8) 字节/组 × 128 组 ≈ 58,368 字节**  
+所以 Swiss Tables 占用的总内存为：  
+- **614 张表 × 58,368 字节/桶 = 35,838,144 字节 ≈ 34 MiB**  
+实时堆使用量仍有大约 **~28 MiB 的减少**。然而，这一节省量比我们观察到的 mallocgc 回归导致的 **200-300 MiB RSS 增加**要**小一个数量级**。因此，在低流量环境中，总体内存使用量仍然增加，这与我们的观察结果一致。  
+但仍有优化内存使用的机会。  
+## 我们如何进一步减少映射内存使用  
+回顾我们之前查看 shardRoutingCache 映射时：  
+最初，我们假设 RoutingKey 字符串为空，并且 LastModified 指针为 nil。然而，我们所有的计算都合理，并提供了一个很好的内存近似值。这是为什么呢？  
+在审查代码后，我们发现 shardRoutingCache 映射中的 RoutingKey 和 LastModified 属性从未被填充。尽管 Response 结构在其他地方使用了这些已设置的字段，但在此特定用例中它们保持未设置状态。  
+顺便一提，我们还注意到 ShardType 字段是一个 int64 枚举——但它只有三个可能的值。这意味着我们可以直接使用 uint8，仍然有足够的空间容纳多达 255 个枚举值。  
+考虑到这个映射可能会变得非常大，我们认为值得优化。我们起草了一个 PR，做了两件事：  
+1. 将 ShardType 字段从 int (8 字节) 切换到 uint8 (1 字节)，允许我们存储多达 255 个值。  
+2. 引入了一个新类型 cachedResponse，它只包含 ShardID 和 ShardType——这样我们就不再存储空字符串和 nil 指针。  
+这将单个键值对的大小从 56 字节减少到：  
+- **16 字节** 用于键指纹（无变化）  
+- **4 字节** 用于 ShardID  
+- **1 字节** 用于 ShardType (**+ 3 字节用于填充**)  
+这使得每个键值对的大小为 **24 字节（带填充）**。  
+在我们的高流量环境中，这大致将映射的大小从 **217 MiB** 减少到 **93 MiB**。  
+如果我们将 GOGC 考虑在内[6]，这大致意味着使用该组件的所有数据处理服务，每个 Pod 的 RSS **减少约 250 MiB**。  
+我们通过实时堆分析确认了内存节省——现在是时候考虑操作影响了。  
+## 如何实现成本缩减？  
+此次映射优化已部署到所有数据处理服务，目前我们可考虑两种途径实现成本缩减。  
+**方案一：降低容器的Kubernetes内存限制。** 这将允许集群上的其他应用使用我们为每个Pod释放的内存。  
+![图表显示数据处理服务在所有环境中RAM减少了200TiB。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxwOPEzOicfJqXtXeo5vSo6jMOE4CFUteJvg0v3MeenhfpeAiaLa3RiaYyTA/640?from=appmsg "")  
+**方案二：使用GOMEMLIMIT进行内存换取CPU。** 如果工作负载是CPU密集型的，设置GOMEMLIMIT[7]可以将在内存上节省的资源用于CPU。CPU的节省能让我们缩减Pod的数量。  
+对于一些已设置GOMEMLIMIT的工作负载，我们观察到平均CPU使用率略有下降：  
+![高流量环境下另一个服务的平均CPU使用率（右侧绿色条表示4月初的新版本）。](https://mmbiz.qpic.cn/mmbiz_jpg/YxZZJFehFua28icasKlhpYUu0iafvABFxw6syXOKfibGDSc3xksaGcYGgdAW8oTgM4AXggSTlLfiaFjaqNn6XlAibUw/640?from=appmsg "")  
+## Go 1.24在生产环境：收获与经验  
+此次调查揭示了Go应用内存优化方面的几点重要见解：  
+- **通过与广泛的Go社区协作，我们发现、诊断并协助修复了Go 1.24中引入的一个微妙但影响深远的内存回归问题。** 尽管该问题在Go的内部堆指标中不可见，但它影响了许多工作负载的物理内存使用量（RSS）。  
+- **每个新的语言版本都会带来优化，但也伴随着回归的风险，可能对生产系统造成显著影响。** 及时更新Go版本不仅能让我们利用Swiss Tables等性能改进，也能帮助我们尽早发现和解决问题，避免其在生产环境中大规模爆发。  
+- **运行时指标和实时堆分析对我们的调查至关重要。** 它们帮助我们形成了准确的假设，追踪了RSS与Go管理内存之间的差异，并与Go团队进行了有效沟通。如果没有详细的指标和高效的分析能力，这类微妙的问题可能无法被发现或被误诊。  
+- **Go 1.24中引入的Swiss Tables相比Go 1.23中基于桶的哈希表，显著节省了内存——尤其对于大型映射。** 在我们的高流量环境中，这使得映射内存使用量**减少了约70%**。  
+- **除了运行时层面的改进，我们自身的数据结构优化也产生了实际影响。** 通过精炼Response结构体以消除未使用的字段并使用适当大小的类型，我们进一步降低了内存消耗。  
+![](https://mmbiz.qpic.cn/mmbiz_gif/YxZZJFehFuaic6PZtOsB7GbKdNaWJCl9BaL81ghibspxexsWDeJq13kicOrGtNU5kYJeS7DBicDz8LhaE3MeEd0S9Q/640?wx_fmt=gif&from=appmsg "")  
+1. 
+[从头实现一个 TSDB 时间序列数据库 - 性能优化](http://mp.weixin.qq.com/s?__biz=MjM5NzUwODgyNA==&mid=2247484099&idx=1&sn=277656da2a05e043d004c3e4e302e2d0&chksm=a6d9a17491ae28628df2b6027bb0731f4a768c56d2f22e22cea2537de7a6037127f1860fcce5&scene=21#wechat_redirect)  
+2. 
+[Go 语言下的批处理式快速洗牌算法](http://mp.weixin.qq.com/s?__biz=MjM5NzUwODgyNA==&mid=2247489057&idx=1&sn=37cbc4d32cef84d1436fd5696568e1d4&chksm=a6d9b59691ae3c80521a6bcb6b04ce98bdf4bc74ab3e2a9101cb75eb25577cebc4fd7daeb090&scene=21#wechat_redirect)  
+3. 
+[使用 Rust、Bert 和 Qdrant 进行语义搜索](http://mp.weixin.qq.com/s?__biz=MjM5NzUwODgyNA==&mid=2247488564&idx=1&sn=d9ccaff022490ac93e9acf42f47aa069&chksm=a6d9b78391ae3e95e8fa4dedb45a2800273f855f7cf1c8b8ebe5215dcc15420511654c9027c2&scene=21#wechat_redirect)  
+4. 
+[Go Protobuf：不透明 API](http://mp.weixin.qq.com/s?__biz=MjM5NzUwODgyNA==&mid=2247488125&idx=1&sn=9f05a7d60c25972fcc9435e681669a5a&chksm=a6d9b1ca91ae38dcfbfc79fcf9f236c360c3285305a9f55daaa5489406a2eb33980d998cbc17&scene=21#wechat_redirect)  
+5. 
+[Go/Golang中的集合 – 使用映射和推荐的包](http://mp.weixin.qq.com/s?__biz=MjM5NzUwODgyNA==&mid=2247487439&idx=1&sn=0fa1eb1e5990df2c55dd6cfd2768c106&chksm=a6d9ac7891ae256e03cadb551ace818637e2b578aa69db9f0dedcfbf5e6327eb2346739ef619&scene=21#wechat_redirect)  
+## 引用链接  
+1. https://go101.org/article/memory-layout.html#size-and-padding  
+2. https://go.dev/blog/swisstable  
+3. https://en.wikipedia.org/wiki/Extendible_hashing  
+4. https://en.wikipedia.org/wiki/Single_instruction,_multiple_data  
+5. https://github.com/golang/go/issues/71255  
+6. https://www.datadoghq.com/blog/go-memory-metrics/#heap-profiling  
+7. https://tip.golang.org/doc/gc-guide#Memory_limit  

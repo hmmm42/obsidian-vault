@@ -32,7 +32,8 @@ func mergeKLists(lists []*ListNode) *ListNode {
 			}
 			p = p.Next
 		}
-		if p1 != nil {
+		// 注意剩下的部分直接接上去就行了, 不用再遍历
+		if p1 != nil { 
 			p.Next = p1
 		}
 		if p2 != nil {
