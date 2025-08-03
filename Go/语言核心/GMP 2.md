@@ -506,7 +506,9 @@ top:
     // 获取当前 p
     pp := _g_.m.p.ptr()
     // ...
-    /*         核心方法：获取需要调度的 g               - 按照优先级，依次取本地队列 lrq、取全局队列 grq、执行 netpoll、窃取其他 p lrq              - 若没有合适 g，则将 p 和 m block 住并添加到空闲队列中    */
+    /*         核心方法：获取需要调度的 g               
+    - 按照优先级，依次取本地队列 lrq、取全局队列 grq、执行 netpoll、窃取其他 p lrq              
+    - 若没有合适 g，则将 p 和 m block 住并添加到空闲队列中    */
     gp, inheritTime, tryWakeP := findRunnable()// blocks until work is available
 
     // ...
@@ -519,7 +521,9 @@ func execute(gp *g, inheritTime bool){
     // 获取 g0
     _g_ := getg()
     // ...
-        /*            建立 m 和 gp 的关系            1）将 m 中的 curg 字段指向 gp            2）将 gp 的 m 字段指向当前 m        */
+        /*            建立 m 和 gp 的关系      
+              1）将 m 中的 curg 字段指向 gp       
+              2）将 gp 的 m 字段指向当前 m        */
     _g_.m.curg = gp
     gp.m = _g_.m
 
@@ -562,7 +566,7 @@ findRunnable 方法声明于 runtime/proc.go 中，其核心步骤包括：：
   
 -  暂停 m（回收资源）  
   
-```
+```go
 // 获取可用于执行的 g. 如果该方法返回了，则一定已经找到了目标 g. 
 func findRunnable()(gp *g, inheritTime, tryWakeP bool){
     // 获取当前执行 p 下的 g0
@@ -986,7 +990,10 @@ func ready(gp *g, traceskip int, next bool){
     // ...
     // 将目标 g 状态由 waiting 更新为 runnable
     casgstatus(gp,_Gwaiting,_Grunnable)
-    /*        1) 优先将目标 g 添加到当前 p 的本地队列 lrq        2）若 lrq 满了，则将 g 追加到全局队列 grq    */
+    /*        
+    1) 优先将目标 g 添加到当前 p 的本地队列 lrq        
+    2）若 lrq 满了，则将 g 追加到全局队列 grq    
+    */
     runqput(_g_.m.p.ptr(), gp,next)
     // 如果有 m 或 p 处于 idle 状态，将其唤醒
     wakep()
