@@ -545,7 +545,7 @@ func (p *ReliablePublisher) Publish(ctx context.Context, exchange, routingKey st
 		false,
 		amqp.Publishing{
 			ContentType:  "application/json",
-			DeliveryMode: amqp.Persistent, // **核心: 消息持久化**
+			DeliveryMode: amqp.Persistent, // 核心: 消息持久化
 			Body:         body,
 		},
 	)
@@ -634,7 +634,7 @@ RabbitMQ的集群主要解决了两个问题: **高可用性(High Availability)*
 - **写入流程 (保证数据不丢)**:
     1. 生产者发送一条消息, 该消息被路由到队列的Leader副本.
     2. Leader将该消息写入自己的**预写日志(WAL)**, 并将该日志条目并行地发送给所有的Followers.
-    3. Leader会**一直等待**, 直到包括它自己在内的**“多数派”(Quorum)**节点都确认已将该日志条目**安全地写入磁盘**. 例如, 在一个有5个副本的队列中, 至少需要`(5/2) + 1 = 3`个节点确认.
+    3. Leader会**一直等待**, 直到包括它自己在内的 **“多数派”(Quorum)** 节点都确认已将该日志条目**安全地写入磁盘**. 例如, 在一个有5个副本的队列中, 至少需要`(5/2) + 1 = 3`个节点确认.
     4. **只有在收到多数派确认后**, Leader才会向生产者发送`ack`, 告诉它"你的消息已安全".
 - **数据安全保证**: 这个"多数派确认"机制是关键. 它保证了任何一条被生产者确认(ack'd)的消息, 都已经安全地持久化在了集群的多数节点上. 即使Leader在发送ack后立刻宕机, 这条消息也绝不会丢失.
 **2. 故障转移 (保证高可用)**
