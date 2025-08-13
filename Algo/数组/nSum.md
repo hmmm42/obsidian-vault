@@ -19,7 +19,7 @@ func twoSum(nums []int, target int) []int {
 }
 ```
 如果需要去重, 需要用双指针
-双指针: 需要先排序, 复杂度$O(\log n)$
+双指针: 需要先排序, 复杂度$O(n\log n)$
 ```go
 func twoSum(nums []int, target int) [][]int {
     // 先对数组排序
@@ -78,6 +78,36 @@ func threeSum(nums []int) (res [][]int) {
 		}
 	}
 	return
+}
+```
+## 变式
+[最接近的三数之和_牛客题霸_牛客网](https://www.nowcoder.com/practice/f889497fd1134af5af9de60b4d13af23?tpId=196&tqId=39665&rp=1&sourceUrl=%2Fexam%2Foj%3Fpage%3D1%26pageSize%3D50%26search%3D%25E4%25BA%258C%25E5%258F%2589%25E6%25A0%2591%25E5%25B1%2595%25E5%25BC%2580%26tab%3D%25E7%25AE%2597%25E6%25B3%2595%25E7%25AC%2594%25E9%259D%25A2%25E8%25AF%2595%25E7%25AF%2587%26topicId%3D196&difficulty=undefined&judgeStatus=undefined&tags=&title=%E6%9C%80%E6%8E%A5%E8%BF%91)
+```go
+func ClosestSum( nums []int ,  target int ) (res int) {
+  res = nums[0] + nums[1] + nums[2]
+  n := len(nums)
+  sort.Ints(nums)
+  for i, first := range nums {
+    if i > 0 && first == nums[i-1] {
+      continue
+    }
+    tar2Sum := target - first
+    l, r := i+1, n-1
+    for l < r {
+      cur := nums[l] + nums[r]
+      if math.Abs(float64(cur-tar2Sum)) < math.Abs(float64(res-target)) {
+        res = first + cur
+      }
+      if cur < tar2Sum {
+        l++
+      } else if cur > tar2Sum {
+        r--
+      } else {
+        return target
+      }
+    }
+  }
+  return res
 }
 ```
 # n数之和
