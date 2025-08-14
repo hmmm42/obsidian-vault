@@ -1284,7 +1284,7 @@ func signalM(mp *m, sig int){
 ```  
   
 2）协作式抢占  
-  
+==只用于有栈扩张情况==
 ![](https://mmbiz.qpic.cn/sz_mmbiz_png/3ic3aBqT2ibZsGic2GyS4XfkqBhsXCru0ibRkYX6kw4kSL4QmVHibO01IKk7Xw7xoHoLGpthbHZP6pUkXSWfIzGvJAw/640?wx_fmt=png&from=appmsg "")  
   
 对于运行中的 g，在栈空间不足时，会切换至 g0 调用 newstack 方法执行栈空间扩张操作，在该流程中预留了一个检查桩点，当其中发现 g 已经被打上抢占标记时，就会主动配合执行让渡操作：  
