@@ -1,3 +1,4 @@
+**精炼概括**：Channel 是一个线程安全的、基于**环形缓冲区**的队列。它通过**互斥锁**保证了并发安全，并使用**调度器**来管理等待的 Goroutine。**无缓冲**通道用于协程间的**同步**，**有缓冲**通道则用于协程间的**解耦**和**数据传递**。
 #  Golang Channel 实现原理   
   
 ![](https://mmbiz.qpic.cn/mmbiz_png/3ic3aBqT2ibZvfwRgTAXo1RdShVNkHZHaliaCdialvlv2mKP7BhAicAYgGXhjHM11QIpUNRl8pj938QZrylOOHpcPTQ/640?wx_fmt=png "null")  
