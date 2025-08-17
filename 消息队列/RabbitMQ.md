@@ -3,9 +3,10 @@ vs kfaka: 都基于 amqp, kfaka 性能高, 可用性高(分布式), 时效性不
 vs rocketMQ: 融合 rabbitMQ 和 kfaka.
 业务背景: 时效性, 一致性
 # 架构
-- Broker: 可以看做RabbitMQ的服务节点。一般请下一个Broker可以看做一个RabbitMQ服务器。
+- Broker: 可以看做RabbitMQ的服务节点, 消息代理服务器。一般请下一个Broker可以看做一个RabbitMQ服务器。负责接收, 存储, 投递, 路由消息
 - Queue: RabbitMQ的内部对象，用于存储消息。多个消费者可以订阅同一队列，这时队列中的消息会被平摊（轮询）给多个消费者进行处理。
 - Exchange:生产者将消息发送到交换器，由交换器将消息路由到一个或者多个队列中。当路由不到时，或返回给生产者或直接丢弃
+- Exchange 和 Queue 之间是多对多的关系, 每一个`ch.QueueDeclare`绑定一种关系
 # Exchange
 ==多个 queue 可以绑定到一个 exchange==
 接收生产者的消息, 通过路由键将消息路由到一个或多个队列
