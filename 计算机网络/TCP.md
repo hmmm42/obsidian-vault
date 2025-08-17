@@ -61,3 +61,10 @@
 - 消息头包含数据长度
 ## 丢包
 ack重传
+## 大量timewait
+- 任意一方没有开启长连接, 用了`Connection:close`
+	- web实现中, 如果没用长连接, 一般由服务端关闭连接
+- 长连接超时, 服务端主动关闭连接, 直接进入timewait
+- 一次长连接内请求达到上限, 直接进入timewait
+## 大量closewait
+被动关闭方才会出现, 说明服务端没有调用`close`关闭连接, 无法从closewait进入lastack
