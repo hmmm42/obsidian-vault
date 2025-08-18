@@ -25,6 +25,7 @@
 
 4.并发时对临界资源的使用
 
+```go
 func demo() {
 	var num int64
 	wg := &sync.WaitGroup{}
@@ -40,7 +41,7 @@ func demo() {
 	wg.Wait()
 	fmt.Println(num)  // ?
 }
-
+```
 问题1：上面代码的 num 输出结果是多少？
 问题2：要求 num 输出结果为100，有什么常用方法
 
