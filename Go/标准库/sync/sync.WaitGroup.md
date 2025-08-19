@@ -210,7 +210,7 @@ func Test_waitGroup(t *testing.T) {
 - • 主 goroutine 从读 goroutine 手中获取到聚合好数据的 resp slice，继续往下处理  
   
 对应的实现源码如下：  
-```
+```go
 func Test_waitGroup(t *testing.T) {
     tasksNum := 10
 
@@ -246,8 +246,9 @@ func Test_waitGroup(t *testing.T) {
    
   
 下面考验一下大家对并发编程的敏感度. 看完上述流程与代码之后，大家有没有找到其中存在的并发问题呢？  
-  
-这里就不卖关子了. 并发问题是存在的，问题点就在于，主 goroutine 在通过 WaitGroup.Wait 方法确保子 goroutine 都完成任务后，会关闭 dataCh ，并直接获取 resp slice 进行打印. 此时 dataCh 虽然关闭了，但是由于异步的不确定性，读 goroutine 可能还没来得及将所有数据都聚合到 resp slice 当中，因此主 goroutine 拿到的 resp slice 可能存在数据缺失.  
+==发送完到dataCh后close完就直接退出了, 不能保证返回时, 聚合工作已经读完==
+这里就不卖关子了. 并发问题是存在的，问题点就在于，
+主goroutine 在通过 WaitGroup.Wait 方法确保子 goroutine 都完成任务后，会关闭 dataCh ，并直接获取 resp slice 进行打印. 此时 dataCh 虽然关闭了，但是由于异步的不确定性，读 goroutine 可能还没来得及将所有数据都聚合到 resp slice 当中，因此主 goroutine 拿到的 resp slice 可能存在数据缺失.  
   
    
 ### 2.3.2 数据聚合版本 2.0  
@@ -264,7 +265,7 @@ func Test_waitGroup(t *testing.T) {
 - • 读 goroutine 在退出前，往 stopCh 中塞入信号量，让主 goroutine 能够感知到读 goroutine 处理完成这一事件  
   
 这样处理之后，逻辑是严谨的，主 goroutine 能够保证取得的 resp slice 所拥有的完整数据.  
-```
+```go
 func Test_waitGroup(t *testing.T) {
     tasksNum := 10
 
@@ -311,6 +312,7 @@ func Test_waitGroup(t *testing.T) {
 版本 2.0 需要额外引入一个 stopCh，用于主 goroutine 和读 goroutine 之间的通信交互，看起来总觉得不够优雅. 下面我们就较真一下，针对于如何省去这个小小的 channel，进行版本 3.0 的方案探讨.  
   
 下面是我个人觉得更优雅的一种实现方式. （版本 3.0 的这种实现方式也是我在参与第一份工作和当时的技术导师 devin 讨论这个问题时，由他提出来的实现思路. 这里留个小彩蛋，小小怀念一下当初的日子）：  
+==把发送操作扔进子协程, 读操作放在主协程, 保证返回时已经读完==
 - • 同样创建一个无缓冲的 dataCh，用于聚合数据的传递  
   
 - • 异步启动一个总览写流程的写 goroutine，在这个写 goroutine 中，基于 WaitGroup 使用模式，让写 goroutine 中进一步启动的子 goroutine 在完成工作后，将数据发送到 dataCh 当中  
@@ -324,7 +326,7 @@ func Test_waitGroup(t *testing.T) {
    
   
 下面是版本 3.0 的实现源码. 这种实现方式是不存在并发问题的，大家不妨细读一下，如发现有问题，欢迎批评指正.  
-```
+```go
 func Test_waitGroup(t *testing.T) {
     tasksNum := 10
 
