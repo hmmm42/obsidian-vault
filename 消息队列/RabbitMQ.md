@@ -480,8 +480,8 @@ func HandleRetry(ctx context.Context, ch *amqp.Channel, d *amqp.Delivery) (err e
 }
 ```
 # 消息不丢
+==消息Persistent + 队列Durable==
 ## 生产者到MQ
-是的, RabbitMQ确实提供了**事务机制(Transactional Mechanism)**, 它是早期版本中用来保证消息可靠投递的方式. 但是, 在现代的RabbitMQ应用中, 它已经**几乎完全被Publisher Confirms机制所取代**.
 ### 事务机制 (Transactional Mechanism)
 事务机制的工作方式与数据库事务非常相似, 它提供了一种“全有或全无”的原子性保证.
 **工作流程:**
@@ -500,7 +500,7 @@ func HandleRetry(ctx context.Context, ch *amqp.Channel, d *amqp.Delivery) (err e
 **工作流程:**
 1. **开启确认模式**: 生产者通过`ch.Confirm(false)`命令, 将Channel设置为Confirm模式.
 2. **异步发布**: 生产者可以像平常一样, 以极高的速度连续调用`ch.Publish()`发布消息. 这个调用是**非阻塞的**, 它会立刻返回.
-3. **异步接收回执**: RabbitMQ会为每一条(或一批)消息异步地发回一个确认信息(ack)或否认信息(nack). 生产者通过一个专门的监听通道(`notifyConfirm`)来接收这些回执, 并进行相应的处理(比如记录日志或重试).
+3. **异步接收回执**: RabbitMQ会为每一条(或一批)消息异步地发回一个确认信息(ack)或否认信息(nack). 生产者通过一个专门的监听通道(`notifyConfirm`)来接收这些回执, 并进行相应的处理(比如记录日志或重试). ==如果是durable, 则确保持久化到磁盘==
 ==这里的`ack`是MQ确认收到生产者消息的`ack`==
 ```go
 // A more robust publisher implementation
