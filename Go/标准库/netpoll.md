@@ -31,7 +31,7 @@
   
 **1）单点阻塞 io 模型**  
   
-在 linux 系统中，一切皆为文件，即一切事物都可以抽象化为一个文件句柄 file descriptor，后续简称 fd.  
+在 linux 系统中，一切皆为[[文件]]，即一切事物都可以抽象化为一个文件句柄 file descriptor，后续简称 fd.  
   
 比如服务端希望接收来自客户端的连接，其中一个实现方式就是让线程 thread 以阻塞模式对 socket fd 发起 accept 系统调用，这样当有连接到达时，thread 即可获取结果；当没有连接就绪事件时，thread 则会因 accept 操作而陷入阻塞态.  
   
@@ -105,7 +105,8 @@ epoll_ctl 指令用于对 epoll 事件表内的 fd 执行变更操作，进一�
 - • EPOLL_CTL_DEL：删除 fd  
   
 ```
-extern int epoll_ctl (int __epfd, int __op, int __fd,              struct epoll_event *__event) __THROW;
+extern int epoll_ctl (int __epfd, int __op, int __fd, 
+             struct epoll_event *__event) __THROW;
 ```  
   
 由于 epoll 事件表是红黑树结构，所以上述操作时间复杂度都是 O(logN) 级别  
@@ -171,7 +172,7 @@ extern int epoll_wait (int __epfd, struct epoll_event *__events,    �
   
 - • 执行 poll open 流程：如若连接已到达，将 conn fd 通过 epoll ctl（ADD）操作注册到 epoll 事件表中，监听其读写就绪事件  
   
-- • conn.Read/Write：通过 conn.Read/Write 方法实现数据的接收与传输  
+- • conn.Read/Write：通过 conn\.Read/Write 方法实现数据的接收与传输  
   
 - • 轮询 + 非阻塞 read/write：轮询以非阻塞模式对 conn fd 执行 read/write 操作，完成数据接收与传输  
   
@@ -217,14 +218,28 @@ gmp 是整个 golang 知识体系的基石，我也在23年初也曾写过一篇
 ## 3.1 核心流程入口  
   
 这里给出简易版 tcp 服务器框架的实现示例，麻雀虽小五脏俱全，其中包含了 2.2 小节中介绍到的有关net server 几大核心流程相关的代码入口：  
-```
+```go
 // 启动 tcp server 代码示例
 func main(){
-    /*        - 创建 tcp 端口监听器            - 创建 socket fd，bind、accept            - 创建 epoll 事件表（epoll_create）            - socket fd 注册到 epoll 事件表（epoll_ctl：add）    */
+    /*        
+    - 创建 tcp 端口监听器            
+    - 创建 socket fd，bind、accept            
+    - 创建 epoll 事件表（epoll_create）            
+    - socket fd 注册到 epoll 事件表（epoll_ctl：add）    
+      */
     l, _ := net.Listen("tcp",":8080")
 
     for{
-        /*            - 等待 tcp 连接到达                - loop + 非阻塞模式调用 accept                - 若未就绪，则通过 gopark 进行阻塞                - 等待 netpoller 轮询唤醒                     - 检查是否有 io 事件就绪（epoll_wait——nonblock）                     - 若发现事件就绪 通过 goready 唤醒 g                - accept 获取 conn fd 后注册到 epoll 事件表（epoll_ctl：add）                - 返回 conn        */
+        /*            
+        - 等待 tcp 连接到达                
+        - loop + 非阻塞模式调用 accept                
+        - 若未就绪，则通过 gopark 进行阻塞                
+        - 等待 netpoller 轮询唤醒                     
+        - 检查是否有 io 事件就绪（epoll_wait——nonblock）                     
+        - 若发现事件就绪 通过 goready 唤醒 g                
+        - accept 获取 conn fd 后注册到 epoll 事件表（epoll_ctl：add）                
+        - 返回 conn        
+        */
         conn, _ := l.Accept()
         // goroutine per conn
         go serve(conn)
