@@ -49,7 +49,9 @@ func twoSum(nums []int, target int) [][]int {
 ```
 # 三数之和
 #hot100
+**还不太熟练**
 枚举每个元素(跳过相同的), 对其后面的元素执行两数之和
+==记得去重只有在满足的时候, 而且一定要去重==
 ```go
 func threeSum(nums []int) (res [][]int) {
 	sort.Ints(nums)
