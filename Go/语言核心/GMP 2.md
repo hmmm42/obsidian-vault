@@ -747,7 +747,7 @@ runqget 方法用于从某个 p 的 lrq 中获取 g：
   
 -  以 CAS 操作移动 lrq 的头节点索引，然后返回头节点对应 g  
   
-```
+```go
 // [无锁化]从某个 p 的本地队列 lrq 中获取 g
 func runqget(_p_ *p)(gp *g, inheritTime bool){
     // 首先尝试获取特定席位 runnext 中的 g，使用 cas 操作
@@ -759,7 +759,8 @@ func runqget(_p_ *p)(gp *g, inheritTime bool){
     // 尝试基于 cas 操作，获取本地队列头节点中的 g
     for{
         // 获取头节点索引
-        h := atomic.LoadAcq(&_p_.runqhead)// load-acquire, synchronize with other consumers
+        h := atomic.LoadAcq(&_p_.runqhead)
+        // load-acquire, synchronize with other consumers
         // 获取尾节点索引
         t := _p_.runqtail
         // 头尾节点重合，说明 lrq 为空
