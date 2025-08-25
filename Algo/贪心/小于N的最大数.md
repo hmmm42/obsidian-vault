@@ -54,3 +54,73 @@ func solution(A []int, num int) int {
 }
 
 ```
+
+[902. 最大为 N 的数字组合 - 力扣（LeetCode）](https://leetcode.cn/problems/numbers-at-most-n-given-digit-set/description/)
+#数位DP [[数位DP]]
+```go
+func atMostNGivenDigitSet(digits []string, n int) int {
+    s := strconv.Itoa(n)
+    m := len(s)
+    
+    // 记忆化数组，只与位数 i 相关
+    // 因为 isNum=false 和 limit=true 的情况不记忆，所以只有 i 这一个维度
+    memo := make([]int, m)
+    for i := range memo {
+        memo[i] = -1
+    }
+
+    var dp func(i int, limit, isNum bool) int
+    dp = func(i int, limit, isNum bool) (res int) {
+        // Base Case: 成功构造了一个数
+        if i == m {
+            if isNum { // 只要填过数字，就是一个有效的数
+                return 1
+            }
+            return 0
+        }
+        
+        // 记忆化：只在不受限且已填数字时
+        if !limit && isNum {
+            if memo[i] != -1 {
+                return memo[i]
+            }
+            defer func() { memo[i] = res }()
+        }
+
+        // --- 递归主体 ---
+
+        // 1. isNum=false 时，可以选择“跳过当前位”，去构造位数更少的数
+        if !isNum {
+            // 这个调用等价于计算所有位数 < m 的数字个数的总和
+            res += dp(i+1, false, false)
+        }
+
+        // 2. 尝试在当前位 i 填入一个数字
+        up := 9
+        if limit {
+            up = int(s[i] - '0')
+        }
+
+        // 遍历可用的数字
+        for _, dStr := range digits {
+            d, _ := strconv.Atoi(dStr)
+            
+            if d > up { // 如果当前数字已超过上限，后续的更大数字也不行
+                break
+            }
+            
+            // 累加方案数
+            // isNum 变为 true，因为我们开始填数字了
+            // 新的 limit 取决于之前的 limit 和当前是否选择了上限 d
+            res += dp(i+1, limit && (d == up), true)
+        }
+        return
+    }
+
+    // 初始调用：从第0位开始，受n限制，还未填入数字
+    // 注意：题目要求正整数，但我们的DP会把0也算进去（如果isNum=false一路走到底）
+    // 但因为题目给的digits不包含'0'，所以isNum=false走到底会返回0，不会构成影响。
+    // 如果digits包含'0'，最后可能需要减1。
+    return dp(0, true, false)
+}
+```
